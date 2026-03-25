@@ -750,13 +750,18 @@ function MCQGrader() {
         
         let score = 0;
         const comparison = [];
+        const wrongQuestionNumbers = []; // NEW: Array to track missed questions
         
         for (let i = 0; i < cleanKey.length; i++) {
           const keyChar = cleanKey[i];
           const studentChar = answers[i] || '-';
           const isCorrect = keyChar === studentChar;
           
-          if (isCorrect) score++;
+          if (isCorrect) {
+            score++;
+          } else {
+            wrongQuestionNumbers.push(i + 1); // NEW: Store the 1-based index if wrong
+          }
           
           comparison.push({
             index: i + 1,
@@ -776,6 +781,7 @@ function MCQGrader() {
           score,
           percentage,
           comparison,
+          wrongQuestionNumbers, // NEW: Include in returned object
           totalQuestions: cleanKey.length
         };
       });
@@ -911,7 +917,7 @@ function MCQGrader() {
                       <div className="flex justify-between items-start mb-3">
                         <div>
                           <h3 className="font-bold text-gray-800">
-                            {/* ADDED: Test Number Indicator */}
+                            {/* Test Number Indicator */}
                             <span className="text-gray-400 font-normal mr-2">#{result.id + 1}</span>
                             {result.name}
                           </h3>
@@ -934,7 +940,7 @@ function MCQGrader() {
                       </div>
 
                       {/* Visual Strip */}
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1 mb-2">
                         {result.comparison.map((item, idx) => (
                           <div key={idx} className="flex flex-col items-center group relative">
                             <div 
@@ -959,6 +965,27 @@ function MCQGrader() {
                           </div>
                         ))}
                       </div>
+
+                      {/* NEW: Missed Questions Display */}
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        {result.wrongQuestionNumbers.length > 0 ? (
+                          <div className="flex items-start gap-2">
+                            <span className="text-[10px] font-bold text-red-500 uppercase mt-1">Wrong:</span>
+                            <div className="flex flex-wrap gap-1">
+                              {result.wrongQuestionNumbers.map(num => (
+                                <span key={num} className="bg-red-50 text-red-700 border border-red-100 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold">
+                                  #{num}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] font-bold text-green-600 uppercase flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Perfect Score
+                          </span>
+                        )}
+                      </div>
+
                     </div>
                   ))}
                 </div>
