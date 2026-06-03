@@ -1,49 +1,214 @@
 // @ts-nocheck
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle, BarChart, Activity } from 'lucide-react';
+import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle, BarChart, Activity, Globe } from 'lucide-react';
+
+// --- TRANSLATION DICTIONARY ---
+const TRANSLATIONS = {
+  en: {
+    // Navigation
+    nav_generator: "Test Generator",
+    nav_answersheet: "Answer Sheet",
+    nav_grader: "MCQ Grader",
+    lang_toggle: "ქართული",
+    
+    // Test Generator
+    gen_title: "Test Generator",
+    gen_subtitle: "Combine questions from multiple sources.",
+    gen_bases: "Source Files (Bases)",
+    gen_reset: "Reset",
+    gen_add: "Add Base",
+    gen_amount: "Amount of qs:",
+    gen_empty: "Click '+ Add Base' to start adding questions.",
+    gen_upload: "Upload File",
+    gen_paste: "Paste Text",
+    gen_rand_order: "Randomize Order",
+    gen_rand_choices: "Randomize Choices",
+    gen_btn: "Generate Test",
+    gen_final: "Final Test",
+    gen_total: "Total Questions:",
+    gen_copy: "Copy Text",
+    gen_paste_title: "Paste Questions",
+    gen_paste_desc: "Paste your questions below.",
+    gen_cancel: "Cancel",
+    gen_save: "Save Questions",
+    
+    // Answer Sheet
+    sheet_title: "Answer Sheet Constructor",
+    sheet_subtitle: "Auto-optimized for A4 paper efficiency.",
+    sheet_total: "Total Questions",
+    sheet_choices: "Choices per Q",
+    sheet_cols: "Columns",
+    sheet_col_1: "1 Column",
+    sheet_col_2: "2 Columns",
+    sheet_col_3: "3 Columns",
+    sheet_col_4: "4 Columns",
+    sheet_fitting: "Fitting",
+    sheet_tickets: "tickets",
+    sheet_btn_copy: "Copy",
+    sheet_btn_print: "Print",
+    sheet_student: "Student:",
+    sheet_group: "Group:",
+    sheet_ans: "answer",
+    
+    // Grader & Analytics
+    grad_title: "MCQ Grader & Analytics",
+    grad_subtitle: "Multi-version grading and item difficulty analysis.",
+    grad_report_btn: "View Statistical Report",
+    grad_step1: "1. Answer Keys (Multi-Version)",
+    grad_step2: "2. Student Responses",
+    grad_step3: "3. Grading Results",
+    grad_clear: "Clear",
+    grad_empty_keys: "Enter at least one answer key to start grading.",
+    grad_empty_stud: "Enter student results to see grades.",
+    grad_perfect: "Perfect Score",
+    grad_wrong: "Wrong:",
+    grad_students: "Students",
+    grad_avg: "Avg Score",
+    grad_best: "Highest",
+    
+    // Report
+    rep_title: "Statistical Analysis Report",
+    rep_back: "Back to Grader",
+    rep_print: "Print Report",
+    rep_version: "Test Version:",
+    rep_q: "Q#",
+    rep_ans: "Correct Ans",
+    rep_rate: "Success Rate",
+    rep_analysis: "Item Difficulty Analysis",
+    rep_hard: "High Variance / Too Difficult (< 20%)",
+    rep_easy: "Low Discrimination / Too Easy (> 80%)",
+    rep_std: "Standard range",
+    rep_nodata: "No data"
+  },
+  ka: {
+    // Navigation
+    nav_generator: "ტესტის გენერატორი",
+    nav_answersheet: "პასუხების ფურცელი",
+    nav_grader: "MCQ შემფასებელი",
+    lang_toggle: "English",
+    
+    // Test Generator
+    gen_title: "ტესტის გენერატორი",
+    gen_subtitle: "შეაერთეთ კითხვები სხვადასხვა წყაროდან.",
+    gen_bases: "წყაროს ფაილები (ბაზები)",
+    gen_reset: "გადატვირთვა",
+    gen_add: "ბაზის დამატება",
+    gen_amount: "კითხვების რ-ბა:",
+    gen_empty: "დააჭირეთ '+ ბაზის დამატება'-ს კითხვების დასამატებლად.",
+    gen_upload: "ფაილის ატვირთვა",
+    gen_paste: "ტექსტის ჩასმა",
+    gen_rand_order: "რიგითობის არევა",
+    gen_rand_choices: "პასუხების არევა",
+    gen_btn: "ტესტის გენერირება",
+    gen_final: "საბოლოო ტესტი",
+    gen_total: "სულ კითხვა:",
+    gen_copy: "ტექსტის კოპირება",
+    gen_paste_title: "კითხვების ჩასმა",
+    gen_paste_desc: "ჩასვით თქვენი კითხვები ქვემოთ.",
+    gen_cancel: "გაუქმება",
+    gen_save: "შენახვა",
+    
+    // Answer Sheet
+    sheet_title: "ფურცლის კონსტრუქტორი",
+    sheet_subtitle: "ავტომატურად ოპტიმიზირებული A4 ფორმატისთვის.",
+    sheet_total: "სულ კითხვა",
+    sheet_choices: "პასუხი კითხვაზე",
+    sheet_cols: "სვეტები",
+    sheet_col_1: "1 სვეტი",
+    sheet_col_2: "2 სვეტი",
+    sheet_col_3: "3 სვეტი",
+    sheet_col_4: "4 სვეტი",
+    sheet_fitting: "ეტევა",
+    sheet_tickets: "ბილეთი",
+    sheet_btn_copy: "კოპირება",
+    sheet_btn_print: "ბეჭდვა",
+    sheet_student: "სტუდენტი:",
+    sheet_group: "ჯგუფი:",
+    sheet_ans: "პასუხი",
+    
+    // Grader & Analytics
+    grad_title: "MCQ შემფასებელი და ანალიტიკა",
+    grad_subtitle: "მრავალ-ვერსიიანი შეფასება და სირთულის ანალიზი.",
+    grad_report_btn: "სტატისტიკური რეპორტი",
+    grad_step1: "1. პასუხების გასაღები (მრავალ-ვერსიიანი)",
+    grad_step2: "2. სტუდენტების პასუხები",
+    grad_step3: "3. შეფასების შედეგები",
+    grad_clear: "გასუფთავება",
+    grad_empty_keys: "შეიყვანეთ მინიმუმ ერთი გასაღები შესაფასებლად.",
+    grad_empty_stud: "შეიყვანეთ სტუდენტების შედეგები.",
+    grad_perfect: "უმაღლესი ქულა",
+    grad_wrong: "არასწორი:",
+    grad_students: "სტუდენტი",
+    grad_avg: "საშ. ქულა",
+    grad_best: "უმაღლესი",
+    
+    // Report
+    rep_title: "სტატისტიკური ანალიზის რეპორტი",
+    rep_back: "უკან დაბრუნება",
+    rep_print: "რეპორტის ბეჭდვა",
+    rep_version: "ტესტის ვერსია:",
+    rep_q: "კ#",
+    rep_ans: "სწორი პასუხი",
+    rep_rate: "წარმატების %",
+    rep_analysis: "სირთულის ანალიზი",
+    rep_hard: "მაღალი ვარიაცია / ძალიან რთული (< 20%)",
+    rep_easy: "დაბალი დისკრიმინაცია / ძალიან მარტივი (> 80%)",
+    rep_std: "სტანდარტული ზღვარი",
+    rep_nodata: "მონაცემები არ არის"
+  }
+};
 
 // --- MAIN APP COMPONENT ---
 export default function App() {
   const [activeTab, setActiveTab] = useState('generator');
+  const [lang, setLang] = useState('en');
+
+  // Helper translation function
+  const t = (key) => TRANSLATIONS[lang][key] || key;
 
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-gray-800">
       {/* Navigation Tabs - Hidden when printing */}
       <div className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10 print:hidden">
         <div className="max-w-5xl mx-auto px-4">
-          <div className="flex space-x-8 overflow-x-auto">
-            <button
-              onClick={() => setActiveTab('generator')}
-              className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors whitespace-nowrap ${
-                activeTab === 'generator'
-                  ? 'border-indigo-600 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
+          <div className="flex items-center justify-between">
+            <div className="flex space-x-8 overflow-x-auto">
+              <button
+                onClick={() => setActiveTab('generator')}
+                className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'generator' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                {t('nav_generator')}
+              </button>
+              <button
+                onClick={() => setActiveTab('answersheet')}
+                className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'answersheet' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Grid className="w-4 h-4" />
+                {t('nav_answersheet')}
+              </button>
+              <button
+                onClick={() => setActiveTab('grader')}
+                className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors whitespace-nowrap ${
+                  activeTab === 'grader' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Award className="w-4 h-4" />
+                {t('nav_grader')}
+              </button>
+            </div>
+            
+            {/* Language Switcher */}
+            <button 
+              onClick={() => setLang(lang === 'en' ? 'ka' : 'en')}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-gray-100 text-sm font-medium text-gray-600 transition-colors border border-transparent hover:border-gray-200"
             >
-              <FileText className="w-4 h-4" />
-              Test Generator
-            </button>
-            <button
-              onClick={() => setActiveTab('answersheet')}
-              className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors whitespace-nowrap ${
-                activeTab === 'answersheet'
-                  ? 'border-indigo-600 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Grid className="w-4 h-4" />
-              Answer Sheet
-            </button>
-            <button
-              onClick={() => setActiveTab('grader')}
-              className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors whitespace-nowrap ${
-                activeTab === 'grader'
-                  ? 'border-indigo-600 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Award className="w-4 h-4" />
-              MCQ Grader
+              <Globe className="w-4 h-4" />
+              {t('lang_toggle')}
             </button>
           </div>
         </div>
@@ -51,16 +216,16 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="p-4 md:p-8 max-w-5xl mx-auto print:p-0 print:m-0 print:w-full print:max-w-none">
-        {activeTab === 'generator' && <TestGenerator />}
-        {activeTab === 'answersheet' && <AnswerSheetConstructor />}
-        {activeTab === 'grader' && <MCQGrader />}
+        {activeTab === 'generator' && <TestGenerator t={t} />}
+        {activeTab === 'answersheet' && <AnswerSheetConstructor t={t} />}
+        {activeTab === 'grader' && <MCQGrader t={t} />}
       </div>
     </div>
   );
 }
 
 // --- SUB-COMPONENT 1: TEST GENERATOR ---
-function TestGenerator() {
+function TestGenerator({ t }) {
   const [bases, setBases] = useState([
     { id: 1, name: 'Base 1', content: [], count: 0, type: 'file' },
     { id: 2, name: 'Base 2', content: [], count: 0, type: 'file' }
@@ -72,7 +237,6 @@ function TestGenerator() {
   const [pasteText, setPasteText] = useState('');
 
   useEffect(() => {
-    // Check for mammoth library on window object
     if (!window.mammoth) {
       const script = document.createElement('script');
       script.src = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js";
@@ -109,7 +273,6 @@ function TestGenerator() {
     let currentBlockType = 'standard';
 
     const saveBlock = (block, type) => {
-      // Filter empty lines to remove gaps
       let content = block.filter(line => line.trim() !== '').join('\n').trim();
       if (type === 'standard') {
         content = content.replace(/([^\n])\s+([A-Ea-e][\.\)]\s)/g, '$1\n$2');
@@ -123,15 +286,12 @@ function TestGenerator() {
       const isSlashStart = trimmed.startsWith('////');
 
       if (isNumStart || isSlashStart) {
-        if (currentBlock.length > 0) {
-          questions.push(saveBlock(currentBlock, currentBlockType));
-        }
+        if (currentBlock.length > 0) questions.push(saveBlock(currentBlock, currentBlockType));
         if (isSlashStart) {
           currentBlockType = 'slash';
           currentBlock = [trimmed]; 
         } else {
           currentBlockType = 'standard';
-          // More robust regex to strip numbering like "1.", "1)", "12."
           const cleanLine = line.replace(/^\s*\d+[\.\)]\s*/, '');
           currentBlock = [cleanLine];
         }
@@ -152,9 +312,7 @@ function TestGenerator() {
       }
     });
 
-    if (currentBlock.length > 0) {
-      questions.push(saveBlock(currentBlock, currentBlockType));
-    }
+    if (currentBlock.length > 0) questions.push(saveBlock(currentBlock, currentBlockType));
     return questions;
   };
 
@@ -173,13 +331,9 @@ function TestGenerator() {
       lines.forEach(line => {
         const trimmed = line.trim();
         if (!trimmed) return; 
-        if (trimmed.startsWith('////')) {
-           questionLines.push(line);
-        } else if (trimmed.startsWith('//')) {
-           choiceLines.push(line);
-        } else {
-           questionLines.push(line);
-        }
+        if (trimmed.startsWith('////')) questionLines.push(line);
+        else if (trimmed.startsWith('//')) choiceLines.push(line);
+        else questionLines.push(line);
       });
 
       if (choiceLines.length === 0) return text;
@@ -191,11 +345,8 @@ function TestGenerator() {
       lines.forEach(line => {
         const trimmed = line.trim();
         if (!trimmed) return;
-        if (/^[A-Ea-e][\.\)]\s/.test(line) || line.startsWith('choice.')) {
-          choiceLines.push(line);
-        } else {
-          questionLines.push(line);
-        }
+        if (/^[A-Ea-e][\.\)]\s/.test(line) || line.startsWith('choice.')) choiceLines.push(line);
+        else questionLines.push(line);
       });
 
       if (choiceLines.length === 0) return text;
@@ -232,10 +383,7 @@ function TestGenerator() {
     setGeneratedTest(finalQuestions);
   };
 
-  const formatOutput = (q, i) => {
-    // Always prepend number
-    return `${i + 1}. ${q}`;
-  };
+  const formatOutput = (q, i) => `${i + 1}. ${q}`;
 
   const copyToClipboard = () => {
     const text = generatedTest.map((q, i) => formatOutput(q, i)).join('\n\n');
@@ -253,7 +401,7 @@ function TestGenerator() {
 
     if (file.name.endsWith('.docx')) {
       if (!window.mammoth) {
-        alert("Word document parser is loading... please try again in 2 seconds.");
+        alert("Word document parser is loading...");
         return;
       }
       const reader = new FileReader();
@@ -270,9 +418,7 @@ function TestGenerator() {
       const reader = new FileReader();
       reader.onload = (e) => {
         const result = e.target?.result;
-        if (typeof result === 'string') {
-          processTextContent(result, file.name, id);
-        }
+        if (typeof result === 'string') processTextContent(result, file.name, id);
       };
       reader.readAsText(file);
     }
@@ -288,9 +434,7 @@ function TestGenerator() {
 
   const addBase = () => {
     let newNum = bases.length + 1;
-    while (bases.some(base => base.name === `Base ${newNum}`)) {
-      newNum++;
-    }
+    while (bases.some(base => base.name === `Base ${newNum}`)) newNum++;
     setBases([...bases, { id: Date.now(), name: `Base ${newNum}`, content: [], count: 0, type: 'file' }]);
   };
 
@@ -303,22 +447,22 @@ function TestGenerator() {
   return (
     <div className="space-y-8 print:hidden">
       <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold text-gray-900">Test Generator</h1>
-        <p className="text-gray-500">Combine questions from multiple sources.</p>
+        <h1 className="text-3xl font-bold text-gray-900">{t('gen_title')}</h1>
+        <p className="text-gray-500">{t('gen_subtitle')}</p>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <FileText className="w-5 h-5 text-indigo-600" />
-            Source Files (Bases)
+            {t('gen_bases')}
           </h2>
           <div className="flex gap-2">
             <button onClick={resetApp} className="flex items-center gap-1 text-sm bg-red-50 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors font-medium">
-              <RotateCcw className="w-4 h-4" /> Reset
+              <RotateCcw className="w-4 h-4" /> {t('gen_reset')}
             </button>
             <button onClick={addBase} className="flex items-center gap-1 text-sm bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors font-medium">
-              <Plus className="w-4 h-4" /> Add Base
+              <Plus className="w-4 h-4" /> {t('gen_add')}
             </button>
           </div>
         </div>
@@ -332,15 +476,15 @@ function TestGenerator() {
                   <div className="flex-1">
                     <p className="font-medium text-gray-900 truncate max-w-[200px]">{base.name}</p>
                     <div className="flex gap-2 text-xs text-gray-500 mt-1">
-                      <span className={base.content.length > 0 ? "text-green-600" : "text-amber-600"}>{base.content.length} qs available</span>
+                      <span className={base.content.length > 0 ? "text-green-600" : "text-amber-600"}>{base.content.length} qs</span>
                       <span>•</span>
                       <div className="flex gap-2">
                         <label className="cursor-pointer hover:text-indigo-600 underline">
-                          Upload File
+                          {t('gen_upload')}
                           <input type="file" accept=".txt,.docx" className="hidden" onChange={(e) => handleFileUpload(e, base.id)} />
                         </label>
                         <span>or</span>
-                        <button onClick={() => { setShowPasteModal(base.id); setPasteText(base.content.join('\n\n')); }} className="hover:text-indigo-600 underline">Paste Text</button>
+                        <button onClick={() => { setShowPasteModal(base.id); setPasteText(base.content.join('\n\n')); }} className="hover:text-indigo-600 underline">{t('gen_paste')}</button>
                       </div>
                     </div>
                   </div>
@@ -348,7 +492,7 @@ function TestGenerator() {
               </div>
               <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
                 <div className="flex items-center gap-2">
-                  <label className="text-sm text-gray-600 whitespace-nowrap">Amount of qs:</label>
+                  <label className="text-sm text-gray-600 whitespace-nowrap">{t('gen_amount')}</label>
                   <input type="number" min="0" max={base.content.length} value={base.count} onChange={(e) => updateCount(base.id, e.target.value)} className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-center" />
                 </div>
                 <button onClick={() => removeBase(base.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"><Trash2 className="w-4 h-4" /></button>
@@ -356,18 +500,7 @@ function TestGenerator() {
             </div>
           ))}
 
-          {bases.length === 0 && <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">Click "+ Add Base" to start adding questions.</div>}
-          
-          <div className="mt-4 p-3 bg-blue-50 text-blue-800 text-sm rounded-lg flex items-start gap-2">
-            <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            <div>
-              <p><strong>Supported Formats:</strong></p>
-              <ul className="list-disc list-inside mt-1 ml-1 space-y-1">
-                <li>Standard: <code>1. Question</code> (Converts to 1, 2, 3...)</li>
-                <li>Slash: <code>//// Question</code> (Preserves exact format)</li>
-              </ul>
-            </div>
-          </div>
+          {bases.length === 0 && <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">{t('gen_empty')}</div>}
         </div>
       </div>
 
@@ -378,7 +511,7 @@ function TestGenerator() {
               <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${isRandomized ? 'translate-x-4' : 'translate-x-0'}`} />
             </div>
             <input type="checkbox" checked={isRandomized} onChange={() => setIsRandomized(!isRandomized)} className="hidden" />
-            <span className="text-sm font-medium text-gray-700 uppercase tracking-wide flex items-center gap-2"><Shuffle className="w-4 h-4" /> Randomize Order</span>
+            <span className="text-sm font-medium text-gray-700 uppercase tracking-wide flex items-center gap-2"><Shuffle className="w-4 h-4" /> {t('gen_rand_order')}</span>
           </label>
 
           <label className="flex items-center gap-3 cursor-pointer select-none bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm hover:border-indigo-300">
@@ -386,22 +519,22 @@ function TestGenerator() {
               <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${isChoiceRandomized ? 'translate-x-4' : 'translate-x-0'}`} />
             </div>
             <input type="checkbox" checked={isChoiceRandomized} onChange={() => setIsChoiceRandomized(!isChoiceRandomized)} className="hidden" />
-            <span className="text-sm font-medium text-gray-700 uppercase tracking-wide flex items-center gap-2"><List className="w-4 h-4" /> Randomize Choices</span>
+            <span className="text-sm font-medium text-gray-700 uppercase tracking-wide flex items-center gap-2"><List className="w-4 h-4" /> {t('gen_rand_choices')}</span>
           </label>
         </div>
 
         <button onClick={generateTest} className="w-full sm:w-auto bg-indigo-600 text-white px-8 py-3 rounded-lg shadow-md hover:bg-indigo-700 active:scale-95 transition-all font-semibold flex items-center justify-center gap-2">
-          <RefreshCw className="w-5 h-5" /> Generate Test
+          <RefreshCw className="w-5 h-5" /> {t('gen_btn')}
         </button>
       </div>
 
       <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden flex flex-col min-h-[500px]">
         <div className="bg-gray-50 border-b border-gray-200 px-6 py-4 flex justify-between items-center">
-          <h2 className="text-lg font-bold text-gray-800">Final Test</h2>
+          <h2 className="text-lg font-bold text-gray-800">{t('gen_final')}</h2>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-500">Total Questions: <span className="font-semibold text-gray-900">{generatedTest.length}</span></span>
+            <span className="text-sm text-gray-500">{t('gen_total')} <span className="font-semibold text-gray-900">{generatedTest.length}</span></span>
             {generatedTest.length > 0 && (
-              <button onClick={copyToClipboard} className="flex items-center gap-1.5 text-xs bg-white border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50 transition-colors"><Copy className="w-3.5 h-3.5" /> Copy Text</button>
+              <button onClick={copyToClipboard} className="flex items-center gap-1.5 text-xs bg-white border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50 transition-colors"><Copy className="w-3.5 h-3.5" /> {t('gen_copy')}</button>
             )}
           </div>
         </div>
@@ -419,8 +552,6 @@ function TestGenerator() {
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-300 pointer-events-none">
               <FileText className="w-24 h-24 mb-4 opacity-20" />
-              <p className="text-xl font-medium opacity-40">Your generated test will appear here</p>
-              <p className="text-sm opacity-40 mt-2">Add bases and click Generate</p>
             </div>
           )}
         </div>
@@ -430,16 +561,16 @@ function TestGenerator() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
             <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-              <h3 className="font-semibold text-gray-800">Paste Questions</h3>
+              <h3 className="font-semibold text-gray-800">{t('gen_paste_title')}</h3>
               <button onClick={() => setShowPasteModal(null)} className="p-1 hover:bg-gray-100 rounded-full"><X className="w-5 h-5 text-gray-500" /></button>
             </div>
             <div className="p-4 flex-1 flex flex-col gap-2">
-              <p className="text-sm text-gray-500">Paste your questions below.<br/><span className="text-indigo-600 font-medium">Standard:</span> <code>1. Question</code><br/><span className="text-indigo-600 font-medium">Slash:</span> <code>//// Question</code></p>
-              <textarea className="w-full flex-1 min-h-[300px] p-4 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none font-mono text-sm" placeholder={`//// Slash Format Question\n// Correct Answer\n/// Incorrect Answer\n\n1. Standard Format Question\nA. Choice 1\nB. Choice 2 *`} value={pasteText} onChange={(e) => setPasteText(e.target.value)} />
+              <p className="text-sm text-gray-500">{t('gen_paste_desc')}</p>
+              <textarea className="w-full flex-1 min-h-[300px] p-4 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none font-mono text-sm" value={pasteText} onChange={(e) => setPasteText(e.target.value)} />
             </div>
             <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex justify-end gap-3">
-              <button onClick={() => setShowPasteModal(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg text-sm font-medium">Cancel</button>
-              <button onClick={handlePasteSave} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium flex items-center gap-2"><Check className="w-4 h-4" /> Save Questions</button>
+              <button onClick={() => setShowPasteModal(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg text-sm font-medium">{t('gen_cancel')}</button>
+              <button onClick={handlePasteSave} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium flex items-center gap-2"><Check className="w-4 h-4" /> {t('gen_save')}</button>
             </div>
           </div>
         </div>
@@ -449,7 +580,7 @@ function TestGenerator() {
 }
 
 // --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR ---
-function AnswerSheetConstructor() {
+function AnswerSheetConstructor({ t }) {
   const [numQuestions, setNumQuestions] = useState(20);
   const [numChoices, setNumChoices] = useState(4);
   const [columns, setColumns] = useState(2);
@@ -457,44 +588,29 @@ function AnswerSheetConstructor() {
 
   const choices = Array.from({ length: numChoices }, (_, i) => String.fromCharCode(97 + i));
 
-  // --- SMART LAYOUT CALCULATION ---
   const layout = useMemo(() => {
-    // A4 dimensions in mm (minus margins)
     const PAGE_W = 210 - 10; 
     const PAGE_H = 297 - 10; 
-    
-    // Height estimates (mm)
     const HEADER_H = 22; 
     const ROW_H = 5.2; 
     const TICKET_PAD = 4; 
-    
-    // Width estimates (mm)
     const NUM_W = 8; 
     const CHOICE_W = 7; 
     const COL_GAP = 3; 
 
-    // Use the explicit column count chosen by the user
     const intCols = columns;
-
     const rowsPerCol = Math.ceil(numQuestions / intCols);
     
     const ticketW = (intCols * (NUM_W + (numChoices * CHOICE_W))) + ((intCols - 1) * COL_GAP) + TICKET_PAD;
     const ticketH = HEADER_H + (rowsPerCol * ROW_H) + TICKET_PAD;
 
-    // Check if even one ticket fits
     const fitsX = Math.max(1, Math.floor(PAGE_W / ticketW));
     const fitsY = Math.max(1, Math.floor(PAGE_H / ticketH));
     const total = fitsX * fitsY;
 
-    return {
-      ticketsPerSheet: total,
-      rows: fitsY,
-      cols: fitsX,
-      internalCols: intCols
-    };
+    return { ticketsPerSheet: total, rows: fitsY, cols: fitsX, internalCols: intCols };
   }, [numQuestions, numChoices, columns]);
 
-  // Generate column data for inside the ticket
   const internalColumnData = useMemo(() => {
     const questionsPerColumn = Math.ceil(numQuestions / layout.internalCols);
     return Array.from({ length: layout.internalCols }, (_, colIndex) => {
@@ -506,11 +622,7 @@ function AnswerSheetConstructor() {
     });
   }, [numQuestions, layout.internalCols]);
 
-  const handlePrint = () => {
-    setTimeout(() => {
-      window.print();
-    }, 100);
-  };
+  const handlePrint = () => setTimeout(() => window.print(), 100);
 
   const copyForGoogleDocs = () => {
     if (!sheetRef.current) return;
@@ -519,38 +631,22 @@ function AnswerSheetConstructor() {
     const selection = window.getSelection();
     selection?.removeAllRanges();
     selection?.addRange(range);
-    try {
-      document.execCommand('copy');
-      alert('Answer sheet copied! Paste into Google Docs (Ctrl+V).');
-    } catch (err) {
-      alert('Failed to copy manually.');
-    }
+    try { document.execCommand('copy'); alert('Copied!'); } catch (err) { alert('Failed to copy manually.'); }
     selection?.removeAllRanges();
   };
 
-  // Styles for the individual ticket
-  const ticketStyle = {
-    fontSize: '11px',
-    headerPadding: '1px 4px',
-    cellPadding: '1px',
-    numWidth: '15px',
-    choiceWidth: '14px',
-    border: '1px dashed #ccc',
-    margin: '2px'
-  };
+  const ticketStyle = { fontSize: '11px', headerPadding: '1px 4px', cellPadding: '1px', numWidth: '15px', choiceWidth: '14px', border: '1px dashed #ccc', margin: '2px' };
 
-  // Sub-component for a single answer ticket
   const Ticket = () => (
     <div style={{ border: ticketStyle.border, padding: '5px', boxSizing: 'border-box', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
       <table style={{ width: '100%', marginBottom: '4px', borderCollapse: 'collapse', fontFamily: 'serif', fontSize: ticketStyle.fontSize }}>
         <tbody>
           <tr>
-            <td style={{ padding: ticketStyle.headerPadding, width: '70%' }}><strong>Student:</strong> ______________________</td>
-            <td style={{ padding: ticketStyle.headerPadding, width: '30%' }}><strong>Group:</strong> ________</td>
+            <td style={{ padding: ticketStyle.headerPadding, width: '70%' }}><strong>{t('sheet_student')}</strong> ______________________</td>
+            <td style={{ padding: ticketStyle.headerPadding, width: '30%' }}><strong>{t('sheet_group')}</strong> ________</td>
           </tr>
         </tbody>
       </table>
-
       <div style={{ flex: 1, display: 'flex' }}>
         {internalColumnData.map((nums, colIdx) => (
           <div key={colIdx} style={{ flex: 1, padding: '0 2px', borderRight: colIdx < layout.internalCols - 1 ? '1px dashed #ccc' : 'none' }}>
@@ -558,7 +654,7 @@ function AnswerSheetConstructor() {
               <thead>
                 <tr style={{ backgroundColor: '#222', color: 'white' }}>
                   <th style={{ border: '1px solid #000', padding: ticketStyle.cellPadding, textAlign: 'center', width: ticketStyle.numWidth }}>#</th>
-                  <th style={{ border: '1px solid #000', padding: ticketStyle.cellPadding, textAlign: 'center' }} colSpan={numChoices}>answer</th>
+                  <th style={{ border: '1px solid #000', padding: ticketStyle.cellPadding, textAlign: 'center' }} colSpan={numChoices}>{t('sheet_ans')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -580,115 +676,46 @@ function AnswerSheetConstructor() {
 
   return (
     <div className="space-y-8">
-      <style>
-        {`
-          @media print {
-            @page { 
-              size: A4; 
-              margin: 0mm; 
-            }
-            body {
-              visibility: hidden;
-            }
-            #answer-sheet-container {
-              visibility: visible !important;
-              position: fixed;
-              left: 0;
-              top: 0;
-              width: 210mm;
-              height: 297mm;
-              margin: 0;
-              padding: 5mm;
-              background: white;
-              z-index: 9999;
-            }
-            #answer-sheet-container * {
-              visibility: visible !important;
-            }
-            .print\\:hidden { 
-              display: none !important; 
-            }
-          }
-        `}
-      </style>
+      <style>{`@media print { @page { size: A4; margin: 0mm; } body { visibility: hidden; } #answer-sheet-container { visibility: visible !important; position: fixed; left: 0; top: 0; width: 210mm; height: 297mm; margin: 0; padding: 5mm; background: white; z-index: 9999; } #answer-sheet-container * { visibility: visible !important; } .print\\:hidden { display: none !important; } }`}</style>
 
-      {/* Header (Hidden on Print) */}
       <div className="text-center space-y-2 print:hidden">
-        <h1 className="text-3xl font-bold text-gray-900">Answer Sheet Constructor</h1>
-        <p className="text-gray-500">Auto-optimized for A4 paper efficiency.</p>
+        <h1 className="text-3xl font-bold text-gray-900">{t('sheet_title')}</h1>
+        <p className="text-gray-500">{t('sheet_subtitle')}</p>
       </div>
 
-      {/* Control Panel (Hidden on Print) */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-wrap gap-6 items-end justify-center print:hidden">
         <div className="space-y-1">
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Questions</label>
-          <input 
-            type="number" min="1" max="200"
-            value={numQuestions} 
-            onChange={(e) => setNumQuestions(Number(e.target.value))}
-            className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-          />
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_total')}</label>
+          <input type="number" min="1" max="200" value={numQuestions} onChange={(e) => setNumQuestions(Number(e.target.value))} className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
         </div>
 
         <div className="space-y-1">
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Choices per Q</label>
-          <select 
-            value={numChoices} 
-            onChange={(e) => setNumChoices(Number(e.target.value))}
-            className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-          >
-            <option value={3}>3 (a-c)</option>
-            <option value={4}>4 (a-d)</option>
-            <option value={5}>5 (a-e)</option>
-            <option value={6}>6 (a-f)</option>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_choices')}</label>
+          <select value={numChoices} onChange={(e) => setNumChoices(Number(e.target.value))} className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+            <option value={3}>3 (a-c)</option><option value={4}>4 (a-d)</option><option value={5}>5 (a-e)</option><option value={6}>6 (a-f)</option>
           </select>
         </div>
 
         <div className="space-y-1">
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Columns</label>
-          <select 
-            value={columns} 
-            onChange={(e) => setColumns(Number(e.target.value))}
-            className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-          >
-            <option value={1}>1 Column</option>
-            <option value={2}>2 Columns</option>
-            <option value={3}>3 Columns</option>
-            <option value={4}>4 Columns</option>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_cols')}</label>
+          <select value={columns} onChange={(e) => setColumns(Number(e.target.value))} className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+            <option value={1}>{t('sheet_col_1')}</option><option value={2}>{t('sheet_col_2')}</option><option value={3}>{t('sheet_col_3')}</option><option value={4}>{t('sheet_col_4')}</option>
           </select>
         </div>
 
-        {/* Layout Info */}
         <div className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
           <Settings className="w-4 h-4" />
-          <span>Fitting {layout.ticketsPerSheet} tickets ({layout.rows}x{layout.cols})</span>
+          <span>{t('sheet_fitting')} {layout.ticketsPerSheet} {t('sheet_tickets')} ({layout.rows}x{layout.cols})</span>
         </div>
 
         <div className="flex gap-2">
-          <button onClick={copyForGoogleDocs} className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition-colors flex items-center gap-2">
-            <Copy className="w-4 h-4" /> Copy
-          </button>
-          <button onClick={handlePrint} className="bg-gray-800 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-gray-900 transition-colors flex items-center gap-2">
-            <Printer className="w-4 h-4" /> Print
-          </button>
+          <button onClick={copyForGoogleDocs} className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition-colors flex items-center gap-2"><Copy className="w-4 h-4" /> {t('sheet_btn_copy')}</button>
+          <button onClick={handlePrint} className="bg-gray-800 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-gray-900 transition-colors flex items-center gap-2"><Printer className="w-4 h-4" /> {t('sheet_btn_print')}</button>
         </div>
       </div>
 
-      {/* Preview Area / Print Target */}
       <div className="flex justify-center bg-gray-200 p-8 overflow-auto print:bg-white print:p-0">
-        <div 
-          id="answer-sheet-container"
-          ref={sheetRef}
-          className="bg-white shadow-2xl mx-auto text-black"
-          style={{ 
-            width: '210mm', 
-            minHeight: '297mm',
-            boxSizing: 'border-box',
-            padding: '5mm',
-            display: 'block'
-          }}
-        >
-          {/* Master Grid Table - Using tables for better copy/paste compatibility */}
+        <div id="answer-sheet-container" ref={sheetRef} className="bg-white shadow-2xl mx-auto text-black" style={{ width: '210mm', minHeight: '297mm', boxSizing: 'border-box', padding: '5mm', display: 'block' }}>
           <table style={{ width: '100%', height: '100%', borderCollapse: 'collapse', border: 'none' }}>
             <tbody>
               {Array.from({ length: layout.rows }).map((_, rowIdx) => (
@@ -696,12 +723,7 @@ function AnswerSheetConstructor() {
                   {Array.from({ length: layout.cols }).map((_, colIdx) => {
                     const ticketIndex = rowIdx * layout.cols + colIdx;
                     return (
-                      <td key={colIdx} style={{ 
-                        width: `${100 / layout.cols}%`, 
-                        height: `${100 / layout.rows}%`, 
-                        padding: '2mm', 
-                        verticalAlign: 'top',
-                      }}>
+                      <td key={colIdx} style={{ width: `${100 / layout.cols}%`, height: `${100 / layout.rows}%`, padding: '2mm', verticalAlign: 'top' }}>
                         {ticketIndex < layout.ticketsPerSheet && <Ticket />}
                       </td>
                     );
@@ -710,8 +732,6 @@ function AnswerSheetConstructor() {
               ))}
             </tbody>
           </table>
-
-          {/* Footer */}
           <div style={{ position: 'absolute', bottom: '2mm', width: '100%', textAlign: 'center', color: '#ccc', fontSize: '8px' }}>
             {layout.ticketsPerSheet} Tickets on A4 | 11px font | {numQuestions} Questions
           </div>
@@ -722,17 +742,14 @@ function AnswerSheetConstructor() {
 }
 
 // --- SUB-COMPONENT 3: MCQ GRADER (REFACTORED) ---
-function MCQGrader() {
+function MCQGrader({ t }) {
   const [keysInput, setKeysInput] = useState('');
   const [studentsInput, setStudentsInput] = useState('');
   const [showReport, setShowReport] = useState(false);
 
-  // --- STATISTICAL THRESHOLDS ---
-  // Easily adjust these percentages if your faculty requirements change
   const DIFFICULTY_TOO_HARD = 20; 
   const DIFFICULTY_TOO_EASY = 80;
 
-  // 1. Parse Answer Keys into a Dictionary
   const parsedKeys = useMemo(() => {
     if (!keysInput.trim()) return {};
     const keys = {};
@@ -749,7 +766,6 @@ function MCQGrader() {
     return keys;
   }, [keysInput]);
 
-  // 2. Grade Students against their respective versions
   const gradingResults = useMemo(() => {
     if (Object.keys(parsedKeys).length === 0 || !studentsInput.trim()) return [];
 
@@ -758,20 +774,14 @@ function MCQGrader() {
       .filter(line => line.length > 0)
       .map((line, index) => {
         const parts = line.split(/\s+/);
-        
-        // Ensure we have at least Name, Version, and Answers
-        if (parts.length < 3) {
-          return { id: index, originalLine: line, error: "Invalid format. Use: [Name] [Version] [Answers]" };
-        }
+        if (parts.length < 3) return { id: index, originalLine: line, error: "Invalid format. Use: [Name] [Version] [Answers]" };
 
         const answers = parts.pop().toUpperCase().replace(/[^A-Z0-9]/g, '');
         const version = parts.pop().toUpperCase();
         const name = parts.join(' ');
 
         const key = parsedKeys[version];
-        if (!key) {
-          return { id: index, name, version, originalLine: line, error: `Key '${version}' not found` };
-        }
+        if (!key) return { id: index, name, version, originalLine: line, error: `Key '${version}' not found` };
 
         let score = 0;
         const comparison = [];
@@ -789,61 +799,36 @@ function MCQGrader() {
         }
 
         const percentage = key.length > 0 ? Math.round((score / key.length) * 100) : 0;
-
-        return {
-          id: index, name, version, originalLine: line, answers, score,
-          percentage, comparison, wrongQuestionNumbers, totalQuestions: key.length, error: null
-        };
+        return { id: index, name, version, originalLine: line, answers, score, percentage, comparison, wrongQuestionNumbers, totalQuestions: key.length, error: null };
       });
   }, [parsedKeys, studentsInput]);
 
-  // 3. Statistical Engine (Item Difficulty Index)
   const statistics = useMemo(() => {
     const validResults = gradingResults.filter(r => !r.error);
     const statsByVersion = {};
 
-    // Initialize stats object for each known key
     Object.keys(parsedKeys).forEach(version => {
-      statsByVersion[version] = {
-        totalStudents: 0,
-        averageScore: 0,
-        highestScore: 0,
-        itemStats: Array.from({ length: parsedKeys[version].length }, (_, i) => ({
-          questionIndex: i + 1,
-          correctCount: 0,
-          expectedAnswer: parsedKeys[version][i]
-        }))
-      };
+      statsByVersion[version] = { totalStudents: 0, averageScore: 0, highestScore: 0, itemStats: Array.from({ length: parsedKeys[version].length }, (_, i) => ({ questionIndex: i + 1, correctCount: 0, expectedAnswer: parsedKeys[version][i] })) };
     });
 
-    // Populate data
     validResults.forEach(student => {
       const vStats = statsByVersion[student.version];
       if (!vStats) return;
-
       vStats.totalStudents++;
       vStats.averageScore += student.score;
       if (student.score > vStats.highestScore) vStats.highestScore = student.score;
-
-      student.comparison.forEach((comp, idx) => {
-        if (comp.isCorrect && vStats.itemStats[idx]) {
-          vStats.itemStats[idx].correctCount++;
-        }
-      });
+      student.comparison.forEach((comp, idx) => { if (comp.isCorrect && vStats.itemStats[idx]) vStats.itemStats[idx].correctCount++; });
     });
 
-    // Finalize percentages and flags
     Object.keys(statsByVersion).forEach(version => {
       const vStats = statsByVersion[version];
       if (vStats.totalStudents > 0) {
         vStats.averageScore = (vStats.averageScore / vStats.totalStudents).toFixed(1);
         vStats.itemStats = vStats.itemStats.map(item => {
           const percentCorrect = Math.round((item.correctCount / vStats.totalStudents) * 100);
-          
           let flag = null;
           if (percentCorrect < DIFFICULTY_TOO_HARD) flag = 'REVIEW_HARD';
           else if (percentCorrect > DIFFICULTY_TOO_EASY) flag = 'REVIEW_EASY';
-
           return { ...item, percentCorrect, flag };
         });
       }
@@ -852,24 +837,14 @@ function MCQGrader() {
     return statsByVersion;
   }, [gradingResults, parsedKeys]);
 
-  const handleClear = () => {
-    setStudentsInput('');
-    setKeysInput('');
-  };
-
-  // --- RENDER INSTITUTIONAL REPORT (PRINT VIEW) ---
   if (showReport) {
     return (
       <div className="bg-white p-8 max-w-4xl mx-auto rounded-xl shadow-sm print:shadow-none print:p-0">
         <div className="flex justify-between items-center mb-8 print:hidden">
-          <h2 className="text-2xl font-bold text-gray-800">Statistical Analysis Report</h2>
+          <h2 className="text-2xl font-bold text-gray-800">{t('rep_title')}</h2>
           <div className="flex gap-4">
-            <button onClick={() => setShowReport(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
-              Back to Grader
-            </button>
-            <button onClick={() => window.print()} className="px-4 py-2 bg-indigo-600 text-white rounded-lg flex items-center gap-2 hover:bg-indigo-700">
-              <Printer className="w-4 h-4" /> Print Report
-            </button>
+            <button onClick={() => setShowReport(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">{t('rep_back')}</button>
+            <button onClick={() => window.print()} className="px-4 py-2 bg-indigo-600 text-white rounded-lg flex items-center gap-2 hover:bg-indigo-700"><Printer className="w-4 h-4" /> {t('rep_print')}</button>
           </div>
         </div>
 
@@ -877,21 +852,20 @@ function MCQGrader() {
           {Object.entries(statistics).map(([version, data]) => (
             <div key={version} className="border border-gray-200 rounded-lg overflow-hidden break-inside-avoid">
               <div className="bg-gray-50 border-b border-gray-200 p-4 flex justify-between items-center">
-                <h3 className="text-lg font-bold text-gray-800">Test Version: {version}</h3>
+                <h3 className="text-lg font-bold text-gray-800">{t('rep_version')} {version}</h3>
                 <div className="flex gap-4 text-sm">
-                  <span className="font-semibold text-gray-600">Students: <span className="text-gray-900">{data.totalStudents}</span></span>
-                  <span className="font-semibold text-gray-600">Avg Score: <span className="text-indigo-600">{data.averageScore}</span></span>
-                  <span className="font-semibold text-gray-600">Highest: <span className="text-green-600">{data.highestScore}</span></span>
+                  <span className="font-semibold text-gray-600">{t('grad_students')}: <span className="text-gray-900">{data.totalStudents}</span></span>
+                  <span className="font-semibold text-gray-600">{t('grad_avg')}: <span className="text-indigo-600">{data.averageScore}</span></span>
+                  <span className="font-semibold text-gray-600">{t('grad_best')}: <span className="text-green-600">{data.highestScore}</span></span>
                 </div>
               </div>
-              
               <table className="w-full text-sm text-left">
                 <thead className="bg-white border-b border-gray-200 text-gray-600">
                   <tr>
-                    <th className="px-4 py-3 font-semibold w-16 text-center">Q#</th>
-                    <th className="px-4 py-3 font-semibold w-24 text-center">Correct Ans</th>
-                    <th className="px-4 py-3 font-semibold w-32 text-center">Success Rate</th>
-                    <th className="px-4 py-3 font-semibold">Item Difficulty Analysis</th>
+                    <th className="px-4 py-3 font-semibold w-16 text-center">{t('rep_q')}</th>
+                    <th className="px-4 py-3 font-semibold w-24 text-center">{t('rep_ans')}</th>
+                    <th className="px-4 py-3 font-semibold w-32 text-center">{t('rep_rate')}</th>
+                    <th className="px-4 py-3 font-semibold">{t('rep_analysis')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -900,28 +874,15 @@ function MCQGrader() {
                       <td className="px-4 py-3 text-center font-medium text-gray-900">{stat.questionIndex}</td>
                       <td className="px-4 py-3 text-center font-mono">{stat.expectedAnswer}</td>
                       <td className="px-4 py-3 text-center">
-                        <span className={`font-bold ${
-                          stat.flag === 'REVIEW_HARD' ? 'text-red-600' : 
-                          stat.flag === 'REVIEW_EASY' ? 'text-yellow-600' : 'text-green-600'
-                        }`}>
+                        <span className={`font-bold ${stat.flag === 'REVIEW_HARD' ? 'text-red-600' : stat.flag === 'REVIEW_EASY' ? 'text-yellow-600' : 'text-green-600'}`}>
                           {data.totalStudents > 0 ? stat.percentCorrect : 0}%
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        {stat.flag === 'REVIEW_HARD' && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 border border-red-200">
-                            <AlertCircle className="w-3.5 h-3.5" /> High Variance / Too Difficult (&lt; 20%)
-                          </span>
-                        )}
-                        {stat.flag === 'REVIEW_EASY' && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-200">
-                            <Activity className="w-3.5 h-3.5" /> Low Discrimination / Too Easy (&gt; 80%)
-                          </span>
-                        )}
-                        {!stat.flag && data.totalStudents > 0 && (
-                          <span className="text-xs text-gray-500">Standard range</span>
-                        )}
-                        {data.totalStudents === 0 && <span className="text-xs text-gray-400">No data</span>}
+                        {stat.flag === 'REVIEW_HARD' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 border border-red-200"><AlertCircle className="w-3.5 h-3.5" /> {t('rep_hard')}</span>}
+                        {stat.flag === 'REVIEW_EASY' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-200"><Activity className="w-3.5 h-3.5" /> {t('rep_easy')}</span>}
+                        {!stat.flag && data.totalStudents > 0 && <span className="text-xs text-gray-500">{t('rep_std')}</span>}
+                        {data.totalStudents === 0 && <span className="text-xs text-gray-400">{t('rep_nodata')}</span>}
                       </td>
                     </tr>
                   ))}
@@ -934,154 +895,89 @@ function MCQGrader() {
     );
   }
 
-  // --- RENDER MAIN GRADER INTERFACE ---
   return (
     <div className="space-y-6 print:hidden">
       <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold text-gray-900">MCQ Grader & Analytics</h1>
-        <p className="text-gray-500">Multi-version grading and item difficulty analysis.</p>
+        <h1 className="text-3xl font-bold text-gray-900">{t('grad_title')}</h1>
+        <p className="text-gray-500">{t('grad_subtitle')}</p>
       </div>
 
       <div className="flex justify-end border-b border-gray-200 pb-4">
         {gradingResults.length > 0 && (
-          <button 
-            onClick={() => setShowReport(true)}
-            className="flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg font-medium hover:bg-indigo-100 transition-colors"
-          >
-            <BarChart className="w-4 h-4" /> View Statistical Report
+          <button onClick={() => setShowReport(true)} className="flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg font-medium hover:bg-indigo-100 transition-colors">
+            <BarChart className="w-4 h-4" /> {t('grad_report_btn')}
           </button>
         )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Left Column: Inputs */}
         <div className="lg:col-span-5 space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-              <h2 className="font-semibold text-gray-700">1. Answer Keys (Multi-Version)</h2>
+              <h2 className="font-semibold text-gray-700">{t('grad_step1')}</h2>
             </div>
             <div className="p-4">
-              <textarea 
-                value={keysInput}
-                onChange={(e) => setKeysInput(e.target.value.toUpperCase())}
-                placeholder={`A AAACBCAD\nB BBBCBCAD\nC ABABABAB`}
-                className="w-full h-32 font-mono text-sm p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none"
-              />
-              <p className="text-xs text-gray-500 mt-2">
-                Format: <strong>[Version] [Correct Answers]</strong> (one per line)
-              </p>
+              <textarea value={keysInput} onChange={(e) => setKeysInput(e.target.value.toUpperCase())} placeholder={`A AAACBCAD\nB BBBCBCAD\nC ABABABAB`} className="w-full h-32 font-mono text-sm p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none" />
             </div>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[500px]">
             <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-              <h2 className="font-semibold text-gray-700">2. Student Responses</h2>
-              <button onClick={handleClear} className="text-xs flex items-center gap-1 text-red-500 hover:text-red-700 transition-colors">
-                <Trash2 className="w-3 h-3" /> Clear
-              </button>
+              <h2 className="font-semibold text-gray-700">{t('grad_step2')}</h2>
+              <button onClick={() => { setStudentsInput(''); setKeysInput(''); }} className="text-xs flex items-center gap-1 text-red-500 hover:text-red-700 transition-colors"><Trash2 className="w-3 h-3" /> {t('grad_clear')}</button>
             </div>
             <div className="flex-1 p-0 relative">
-              <textarea 
-                value={studentsInput}
-                onChange={(e) => setStudentsInput(e.target.value)}
-                placeholder={`Format examples:\nJohn Smith A AAACBCAD\nJane Doe B BBBCBCAD`}
-                className="w-full h-full p-4 font-mono text-sm resize-none focus:ring-0 border-none outline-none"
-                spellCheck={false}
-              />
+              <textarea value={studentsInput} onChange={(e) => setStudentsInput(e.target.value)} placeholder={`John Smith A AAACBCAD\nJane Doe B BBBCBCAD`} className="w-full h-full p-4 font-mono text-sm resize-none focus:ring-0 border-none outline-none" spellCheck={false} />
             </div>
           </div>
         </div>
 
-        {/* Right Column: Results */}
         <div className="lg:col-span-7">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 min-h-[600px] flex flex-col">
             <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 sticky top-0 z-10">
-              <h2 className="font-semibold text-gray-700">3. Grading Results</h2>
+              <h2 className="font-semibold text-gray-700">{t('grad_step3')}</h2>
             </div>
-
             <div className="p-4 space-y-4">
               {Object.keys(parsedKeys).length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-                  <AlertCircle className="w-12 h-12 mb-2 opacity-20" />
-                  <p>Enter at least one answer key to start grading.</p>
-                </div>
+                <div className="flex flex-col items-center justify-center h-64 text-gray-400"><AlertCircle className="w-12 h-12 mb-2 opacity-20" /><p>{t('grad_empty_keys')}</p></div>
               ) : gradingResults.length === 0 ? (
-                 <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-                  <RefreshCw className="w-12 h-12 mb-2 opacity-20" />
-                  <p>Enter student results to see grades.</p>
-                </div>
+                 <div className="flex flex-col items-center justify-center h-64 text-gray-400"><RefreshCw className="w-12 h-12 mb-2 opacity-20" /><p>{t('grad_empty_stud')}</p></div>
               ) : (
                 <div className="space-y-4">
                   {gradingResults.map((result, idx) => (
                     <div key={idx} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow bg-white">
-                      
-                      {/* Error Handling State */}
                       {result.error ? (
-                        <div className="flex items-center gap-2 text-red-500">
-                          <AlertCircle className="w-4 h-4" />
-                          <span className="text-sm font-medium">{result.error}</span>
-                          <span className="text-xs text-gray-400 ml-2 font-mono truncate">{result.originalLine}</span>
-                        </div>
+                        <div className="flex items-center gap-2 text-red-500"><AlertCircle className="w-4 h-4" /><span className="text-sm font-medium">{result.error}</span><span className="text-xs text-gray-400 ml-2 font-mono truncate">{result.originalLine}</span></div>
                       ) : (
                         <>
                           <div className="flex justify-between items-start mb-3">
                             <div>
-                              <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                                {result.name}
-                                <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded font-bold border border-gray-200">
-                                  Ver {result.version}
-                                </span>
-                              </h3>
-                              <div className="text-xs text-gray-500 font-mono mt-1 tracking-wider opacity-70 truncate max-w-[200px]">
-                                {result.answers}
-                              </div>
+                              <h3 className="font-bold text-gray-800 flex items-center gap-2">{result.name}<span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded font-bold border border-gray-200">Ver {result.version}</span></h3>
+                              <div className="text-xs text-gray-500 font-mono mt-1 tracking-wider opacity-70 truncate max-w-[200px]">{result.answers}</div>
                             </div>
                             <div className="text-right">
-                              <div className="text-2xl font-bold text-indigo-600">
-                                {result.score}<span className="text-sm text-gray-400 font-normal">/{result.totalQuestions}</span>
-                              </div>
-                              <div className={`text-xs font-semibold px-2 py-0.5 rounded-full inline-block mt-1 ${
-                                result.percentage >= 80 ? 'bg-green-100 text-green-700' :
-                                result.percentage >= 50 ? 'bg-yellow-100 text-yellow-700' :
-                                'bg-red-100 text-red-700'
-                              }`}>
-                                {result.percentage}%
-                              </div>
+                              <div className="text-2xl font-bold text-indigo-600">{result.score}<span className="text-sm text-gray-400 font-normal">/{result.totalQuestions}</span></div>
+                              <div className={`text-xs font-semibold px-2 py-0.5 rounded-full inline-block mt-1 ${result.percentage >= 80 ? 'bg-green-100 text-green-700' : result.percentage >= 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{result.percentage}%</div>
                             </div>
                           </div>
-
                           <div className="flex flex-wrap gap-1 mb-2">
                             {result.comparison.map((item, i) => (
                               <div key={i} className="flex flex-col items-center group relative">
-                                <div className={`w-6 h-8 flex items-center justify-center rounded text-xs font-bold select-none cursor-help ${item.isCorrect ? 'bg-green-500 text-white' : 'bg-red-500 text-white'} ${item.studentChar === '-' ? 'opacity-50' : ''}`}>
-                                  {item.studentChar}
-                                </div>
-                                {!item.isCorrect && (
-                                  <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none">
-                                    Exp: {item.keyChar}
-                                  </div>
-                                )}
+                                <div className={`w-6 h-8 flex items-center justify-center rounded text-xs font-bold select-none cursor-help ${item.isCorrect ? 'bg-green-500 text-white' : 'bg-red-500 text-white'} ${item.studentChar === '-' ? 'opacity-50' : ''}`}>{item.studentChar}</div>
+                                {!item.isCorrect && <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none">Exp: {item.keyChar}</div>}
                               </div>
                             ))}
                           </div>
-
                           <div className="mt-3 pt-3 border-t border-gray-100">
                             {result.wrongQuestionNumbers.length > 0 ? (
                               <div className="flex items-start gap-2">
-                                <span className="text-[10px] font-bold text-red-500 uppercase mt-1">Wrong:</span>
+                                <span className="text-[10px] font-bold text-red-500 uppercase mt-1">{t('grad_wrong')}</span>
                                 <div className="flex flex-wrap gap-1">
-                                  {result.wrongQuestionNumbers.map(num => (
-                                    <span key={num} className="bg-red-50 text-red-700 border border-red-100 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold">
-                                      #{num}
-                                    </span>
-                                  ))}
+                                  {result.wrongQuestionNumbers.map(num => <span key={num} className="bg-red-50 text-red-700 border border-red-100 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold">#{num}</span>)}
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-[10px] font-bold text-green-600 uppercase flex items-center gap-1">
-                                <Check className="w-3 h-3" /> Perfect Score
-                              </span>
+                              <span className="text-[10px] font-bold text-green-600 uppercase flex items-center gap-1"><Check className="w-3 h-3" /> {t('grad_perfect')}</span>
                             )}
                           </div>
                         </>
