@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle, BarChart, Activity } from 'lucide-react';
 
 // --- MAIN APP COMPONENT ---
 export default function App() {
@@ -721,121 +721,235 @@ function AnswerSheetConstructor() {
   );
 }
 
-// --- SUB-COMPONENT 3: MCQ GRADER ---
+// --- SUB-COMPONENT 3: MCQ GRADER (REFACTORED) ---
 function MCQGrader() {
-  const [answerKey, setAnswerKey] = useState('');
-  const [studentInput, setStudentInput] = useState('');
-  const [results, setResults] = useState([]);
-  const [stats, setStats] = useState({ average: 0, highest: 0, total: 0 });
+  const [keysInput, setKeysInput] = useState('');
+  const [studentsInput, setStudentsInput] = useState('');
+  const [showReport, setShowReport] = useState(false);
 
-  useEffect(() => {
-    if (!answerKey) {
-      setResults([]);
-      setStats({ average: 0, highest: 0, total: 0 });
-      return;
-    }
+  // --- STATISTICAL THRESHOLDS ---
+  // Easily adjust these percentages if your faculty requirements change
+  const DIFFICULTY_TOO_HARD = 20; 
+  const DIFFICULTY_TOO_EASY = 80;
 
-    const cleanKey = answerKey.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const lines = studentInput.split('\n');
-    
-    const processedResults = lines
+  // 1. Parse Answer Keys into a Dictionary
+  const parsedKeys = useMemo(() => {
+    if (!keysInput.trim()) return {};
+    const keys = {};
+    keysInput.split('\n').forEach(line => {
+      const cleanLine = line.trim();
+      if (!cleanLine) return;
+      const parts = cleanLine.split(/\s+/);
+      if (parts.length >= 2) {
+        const version = parts[0].toUpperCase();
+        const answers = parts[parts.length - 1].toUpperCase().replace(/[^A-Z0-9]/g, '');
+        keys[version] = answers;
+      }
+    });
+    return keys;
+  }, [keysInput]);
+
+  // 2. Grade Students against their respective versions
+  const gradingResults = useMemo(() => {
+    if (Object.keys(parsedKeys).length === 0 || !studentsInput.trim()) return [];
+
+    return studentsInput.split('\n')
       .map(line => line.trim())
       .filter(line => line.length > 0)
       .map((line, index) => {
         const parts = line.split(/\s+/);
-        let answersRaw = parts[parts.length - 1];
-        let name = parts.length > 1 ? parts.slice(0, -1).join(' ') : `Student ${index + 1}`;
         
-        const answers = answersRaw.toUpperCase().replace(/[^A-Z0-9]/g, '');
-        
-        let score = 0;
-        const comparison = [];
-        const wrongQuestionNumbers = []; // NEW: Array to track missed questions
-        
-        for (let i = 0; i < cleanKey.length; i++) {
-          const keyChar = cleanKey[i];
-          const studentChar = answers[i] || '-';
-          const isCorrect = keyChar === studentChar;
-          
-          if (isCorrect) {
-            score++;
-          } else {
-            wrongQuestionNumbers.push(i + 1); // NEW: Store the 1-based index if wrong
-          }
-          
-          comparison.push({
-            index: i + 1,
-            keyChar,
-            studentChar,
-            isCorrect
-          });
+        // Ensure we have at least Name, Version, and Answers
+        if (parts.length < 3) {
+          return { id: index, originalLine: line, error: "Invalid format. Use: [Name] [Version] [Answers]" };
         }
 
-        const percentage = cleanKey.length > 0 ? Math.round((score / cleanKey.length) * 100) : 0;
+        const answers = parts.pop().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const version = parts.pop().toUpperCase();
+        const name = parts.join(' ');
+
+        const key = parsedKeys[version];
+        if (!key) {
+          return { id: index, name, version, originalLine: line, error: `Key '${version}' not found` };
+        }
+
+        let score = 0;
+        const comparison = [];
+        const wrongQuestionNumbers = [];
+
+        for (let i = 0; i < key.length; i++) {
+          const keyChar = key[i];
+          const studentChar = answers[i] || '-';
+          const isCorrect = keyChar === studentChar;
+
+          if (isCorrect) score++;
+          else wrongQuestionNumbers.push(i + 1);
+
+          comparison.push({ index: i + 1, keyChar, studentChar, isCorrect });
+        }
+
+        const percentage = key.length > 0 ? Math.round((score / key.length) * 100) : 0;
 
         return {
-          id: index,
-          name,
-          originalLine: line,
-          answers,
-          score,
-          percentage,
-          comparison,
-          wrongQuestionNumbers, // NEW: Include in returned object
-          totalQuestions: cleanKey.length
+          id: index, name, version, originalLine: line, answers, score,
+          percentage, comparison, wrongQuestionNumbers, totalQuestions: key.length, error: null
         };
       });
+  }, [parsedKeys, studentsInput]);
 
-    setResults(processedResults);
+  // 3. Statistical Engine (Item Difficulty Index)
+  const statistics = useMemo(() => {
+    const validResults = gradingResults.filter(r => !r.error);
+    const statsByVersion = {};
 
-    if (processedResults.length > 0) {
-      const totalScore = processedResults.reduce((acc, curr) => acc + curr.score, 0);
-      const maxScore = Math.max(...processedResults.map(r => r.score));
-      setStats({
-        average: (totalScore / processedResults.length).toFixed(1),
-        highest: maxScore,
-        total: processedResults.length
+    // Initialize stats object for each known key
+    Object.keys(parsedKeys).forEach(version => {
+      statsByVersion[version] = {
+        totalStudents: 0,
+        averageScore: 0,
+        highestScore: 0,
+        itemStats: Array.from({ length: parsedKeys[version].length }, (_, i) => ({
+          questionIndex: i + 1,
+          correctCount: 0,
+          expectedAnswer: parsedKeys[version][i]
+        }))
+      };
+    });
+
+    // Populate data
+    validResults.forEach(student => {
+      const vStats = statsByVersion[student.version];
+      if (!vStats) return;
+
+      vStats.totalStudents++;
+      vStats.averageScore += student.score;
+      if (student.score > vStats.highestScore) vStats.highestScore = student.score;
+
+      student.comparison.forEach((comp, idx) => {
+        if (comp.isCorrect && vStats.itemStats[idx]) {
+          vStats.itemStats[idx].correctCount++;
+        }
       });
-    }
+    });
 
-  }, [answerKey, studentInput]);
+    // Finalize percentages and flags
+    Object.keys(statsByVersion).forEach(version => {
+      const vStats = statsByVersion[version];
+      if (vStats.totalStudents > 0) {
+        vStats.averageScore = (vStats.averageScore / vStats.totalStudents).toFixed(1);
+        vStats.itemStats = vStats.itemStats.map(item => {
+          const percentCorrect = Math.round((item.correctCount / vStats.totalStudents) * 100);
+          
+          let flag = null;
+          if (percentCorrect < DIFFICULTY_TOO_HARD) flag = 'REVIEW_HARD';
+          else if (percentCorrect > DIFFICULTY_TOO_EASY) flag = 'REVIEW_EASY';
+
+          return { ...item, percentCorrect, flag };
+        });
+      }
+    });
+
+    return statsByVersion;
+  }, [gradingResults, parsedKeys]);
 
   const handleClear = () => {
-    setStudentInput('');
-    setAnswerKey('');
+    setStudentsInput('');
+    setKeysInput('');
   };
 
-  const copyResults = () => {
-    const text = results.map(r => `${r.name}\t${r.score}/${r.totalQuestions}\t${r.percentage}%`).join('\n');
-    navigator.clipboard.writeText(text);
-  };
+  // --- RENDER INSTITUTIONAL REPORT (PRINT VIEW) ---
+  if (showReport) {
+    return (
+      <div className="bg-white p-8 max-w-4xl mx-auto rounded-xl shadow-sm print:shadow-none print:p-0">
+        <div className="flex justify-between items-center mb-8 print:hidden">
+          <h2 className="text-2xl font-bold text-gray-800">Statistical Analysis Report</h2>
+          <div className="flex gap-4">
+            <button onClick={() => setShowReport(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+              Back to Grader
+            </button>
+            <button onClick={() => window.print()} className="px-4 py-2 bg-indigo-600 text-white rounded-lg flex items-center gap-2 hover:bg-indigo-700">
+              <Printer className="w-4 h-4" /> Print Report
+            </button>
+          </div>
+        </div>
 
+        <div className="space-y-12">
+          {Object.entries(statistics).map(([version, data]) => (
+            <div key={version} className="border border-gray-200 rounded-lg overflow-hidden break-inside-avoid">
+              <div className="bg-gray-50 border-b border-gray-200 p-4 flex justify-between items-center">
+                <h3 className="text-lg font-bold text-gray-800">Test Version: {version}</h3>
+                <div className="flex gap-4 text-sm">
+                  <span className="font-semibold text-gray-600">Students: <span className="text-gray-900">{data.totalStudents}</span></span>
+                  <span className="font-semibold text-gray-600">Avg Score: <span className="text-indigo-600">{data.averageScore}</span></span>
+                  <span className="font-semibold text-gray-600">Highest: <span className="text-green-600">{data.highestScore}</span></span>
+                </div>
+              </div>
+              
+              <table className="w-full text-sm text-left">
+                <thead className="bg-white border-b border-gray-200 text-gray-600">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold w-16 text-center">Q#</th>
+                    <th className="px-4 py-3 font-semibold w-24 text-center">Correct Ans</th>
+                    <th className="px-4 py-3 font-semibold w-32 text-center">Success Rate</th>
+                    <th className="px-4 py-3 font-semibold">Item Difficulty Analysis</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.itemStats.map((stat) => (
+                    <tr key={stat.questionIndex} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                      <td className="px-4 py-3 text-center font-medium text-gray-900">{stat.questionIndex}</td>
+                      <td className="px-4 py-3 text-center font-mono">{stat.expectedAnswer}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`font-bold ${
+                          stat.flag === 'REVIEW_HARD' ? 'text-red-600' : 
+                          stat.flag === 'REVIEW_EASY' ? 'text-yellow-600' : 'text-green-600'
+                        }`}>
+                          {data.totalStudents > 0 ? stat.percentCorrect : 0}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {stat.flag === 'REVIEW_HARD' && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 border border-red-200">
+                            <AlertCircle className="w-3.5 h-3.5" /> High Variance / Too Difficult (&lt; 20%)
+                          </span>
+                        )}
+                        {stat.flag === 'REVIEW_EASY' && (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-200">
+                            <Activity className="w-3.5 h-3.5" /> Low Discrimination / Too Easy (&gt; 80%)
+                          </span>
+                        )}
+                        {!stat.flag && data.totalStudents > 0 && (
+                          <span className="text-xs text-gray-500">Standard range</span>
+                        )}
+                        {data.totalStudents === 0 && <span className="text-xs text-gray-400">No data</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // --- RENDER MAIN GRADER INTERFACE ---
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 print:hidden">
       <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold text-gray-900">MCQ Grader</h1>
-        <p className="text-gray-500">Manual entry quick-grading tool.</p>
+        <h1 className="text-3xl font-bold text-gray-900">MCQ Grader & Analytics</h1>
+        <p className="text-gray-500">Multi-version grading and item difficulty analysis.</p>
       </div>
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-200 pb-6">
-        <div></div>
-        {results.length > 0 && (
-          <div className="flex gap-4 text-sm font-medium bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-            <div className="flex flex-col">
-              <span className="text-xs text-gray-400 uppercase tracking-wider">Students</span>
-              <span className="text-lg">{stats.total}</span>
-            </div>
-            <div className="w-px bg-gray-200 mx-2"></div>
-            <div className="flex flex-col">
-              <span className="text-xs text-gray-400 uppercase tracking-wider">Avg Score</span>
-              <span className="text-lg text-indigo-600">{stats.average}</span>
-            </div>
-            <div className="w-px bg-gray-200 mx-2"></div>
-            <div className="flex flex-col">
-              <span className="text-xs text-gray-400 uppercase tracking-wider">Best</span>
-              <span className="text-lg text-green-600">{stats.highest}</span>
-            </div>
-          </div>
+      <div className="flex justify-end border-b border-gray-200 pb-4">
+        {gradingResults.length > 0 && (
+          <button 
+            onClick={() => setShowReport(true)}
+            className="flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg font-medium hover:bg-indigo-100 transition-colors"
+          >
+            <BarChart className="w-4 h-4" /> View Statistical Report
+          </button>
         )}
       </div>
 
@@ -843,30 +957,23 @@ function MCQGrader() {
         
         {/* Left Column: Inputs */}
         <div className="lg:col-span-5 space-y-6">
-          
-          {/* Step 1: Answer Key */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-              <h2 className="font-semibold text-gray-700">1. Answer Key</h2>
-              <span className="text-xs bg-gray-200 px-2 py-1 rounded text-gray-600">
-                {answerKey ? answerKey.length : 0} Questions
-              </span>
+              <h2 className="font-semibold text-gray-700">1. Answer Keys (Multi-Version)</h2>
             </div>
             <div className="p-4">
-              <input 
-                type="text" 
-                value={answerKey}
-                onChange={(e) => setAnswerKey(e.target.value.toUpperCase())}
-                placeholder="e.g. AAACBCAD"
-                className="w-full text-2xl font-mono tracking-widest p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none uppercase placeholder:tracking-normal placeholder:text-base placeholder:text-gray-400"
+              <textarea 
+                value={keysInput}
+                onChange={(e) => setKeysInput(e.target.value.toUpperCase())}
+                placeholder={`A AAACBCAD\nB BBBCBCAD\nC ABABABAB`}
+                className="w-full h-32 font-mono text-sm p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none"
               />
               <p className="text-xs text-gray-500 mt-2">
-                Enter the correct sequence of answers.
+                Format: <strong>[Version] [Correct Answers]</strong> (one per line)
               </p>
             </div>
           </div>
 
-          {/* Step 2: Student Data */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[500px]">
             <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
               <h2 className="font-semibold text-gray-700">2. Student Responses</h2>
@@ -876,116 +983,109 @@ function MCQGrader() {
             </div>
             <div className="flex-1 p-0 relative">
               <textarea 
-                value={studentInput}
-                onChange={(e) => setStudentInput(e.target.value)}
-                placeholder={`Format examples:\nAAACBCAD\nJohn AAACBCAD\nSmith A A A C B C A D`}
+                value={studentsInput}
+                onChange={(e) => setStudentsInput(e.target.value)}
+                placeholder={`Format examples:\nJohn Smith A AAACBCAD\nJane Doe B BBBCBCAD`}
                 className="w-full h-full p-4 font-mono text-sm resize-none focus:ring-0 border-none outline-none"
                 spellCheck={false}
               />
             </div>
           </div>
-
         </div>
 
         {/* Right Column: Results */}
         <div className="lg:col-span-7">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 min-h-[600px] flex flex-col">
-            <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center sticky top-0 z-10">
-              <h2 className="font-semibold text-gray-700">3. Results</h2>
-              {results.length > 0 && (
-                <button onClick={copyResults} className="text-xs flex items-center gap-1 bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors">
-                  <Copy className="w-3 h-3" /> Copy Summary
-                </button>
-              )}
+            <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 sticky top-0 z-10">
+              <h2 className="font-semibold text-gray-700">3. Grading Results</h2>
             </div>
 
             <div className="p-4 space-y-4">
-              {!answerKey ? (
+              {Object.keys(parsedKeys).length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-gray-400">
                   <AlertCircle className="w-12 h-12 mb-2 opacity-20" />
-                  <p>Enter an answer key to start grading.</p>
+                  <p>Enter at least one answer key to start grading.</p>
                 </div>
-              ) : results.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+              ) : gradingResults.length === 0 ? (
+                 <div className="flex flex-col items-center justify-center h-64 text-gray-400">
                   <RefreshCw className="w-12 h-12 mb-2 opacity-20" />
                   <p>Enter student results to see grades.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {results.map((result) => (
-                    <div key={result.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow bg-white">
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <h3 className="font-bold text-gray-800">
-                            {/* Test Number Indicator */}
-                            <span className="text-gray-400 font-normal mr-2">#{result.id + 1}</span>
-                            {result.name}
-                          </h3>
-                          <div className="text-xs text-gray-500 font-mono mt-1 tracking-wider opacity-70 truncate max-w-[200px]">
-                            {result.answers}
-                          </div>
+                  {gradingResults.map((result, idx) => (
+                    <div key={idx} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow bg-white">
+                      
+                      {/* Error Handling State */}
+                      {result.error ? (
+                        <div className="flex items-center gap-2 text-red-500">
+                          <AlertCircle className="w-4 h-4" />
+                          <span className="text-sm font-medium">{result.error}</span>
+                          <span className="text-xs text-gray-400 ml-2 font-mono truncate">{result.originalLine}</span>
                         </div>
-                        <div className="text-right">
-                          <div className="text-2xl font-bold text-indigo-600">
-                            {result.score}<span className="text-sm text-gray-400 font-normal">/{result.totalQuestions}</span>
-                          </div>
-                          <div className={`text-xs font-semibold px-2 py-0.5 rounded-full inline-block mt-1 ${
-                            result.percentage >= 80 ? 'bg-green-100 text-green-700' :
-                            result.percentage >= 50 ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>
-                            {result.percentage}%
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Visual Strip */}
-                      <div className="flex flex-wrap gap-1 mb-2">
-                        {result.comparison.map((item, idx) => (
-                          <div key={idx} className="flex flex-col items-center group relative">
-                            <div 
-                              className={`
-                                w-6 h-8 flex items-center justify-center rounded text-xs font-bold select-none cursor-help
-                                ${item.isCorrect 
-                                  ? 'bg-green-500 text-white' 
-                                  : 'bg-red-500 text-white'
-                                }
-                                ${item.studentChar === '-' ? 'opacity-50' : ''}
-                              `}
-                            >
-                              {item.studentChar}
-                            </div>
-                            
-                            {/* Tooltip on hover showing expected answer */}
-                            {!item.isCorrect && (
-                              <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none">
-                                Exp: {item.keyChar}
+                      ) : (
+                        <>
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                                {result.name}
+                                <span className="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded font-bold border border-gray-200">
+                                  Ver {result.version}
+                                </span>
+                              </h3>
+                              <div className="text-xs text-gray-500 font-mono mt-1 tracking-wider opacity-70 truncate max-w-[200px]">
+                                {result.answers}
                               </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-2xl font-bold text-indigo-600">
+                                {result.score}<span className="text-sm text-gray-400 font-normal">/{result.totalQuestions}</span>
+                              </div>
+                              <div className={`text-xs font-semibold px-2 py-0.5 rounded-full inline-block mt-1 ${
+                                result.percentage >= 80 ? 'bg-green-100 text-green-700' :
+                                result.percentage >= 50 ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-red-100 text-red-700'
+                              }`}>
+                                {result.percentage}%
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {result.comparison.map((item, i) => (
+                              <div key={i} className="flex flex-col items-center group relative">
+                                <div className={`w-6 h-8 flex items-center justify-center rounded text-xs font-bold select-none cursor-help ${item.isCorrect ? 'bg-green-500 text-white' : 'bg-red-500 text-white'} ${item.studentChar === '-' ? 'opacity-50' : ''}`}>
+                                  {item.studentChar}
+                                </div>
+                                {!item.isCorrect && (
+                                  <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none">
+                                    Exp: {item.keyChar}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            {result.wrongQuestionNumbers.length > 0 ? (
+                              <div className="flex items-start gap-2">
+                                <span className="text-[10px] font-bold text-red-500 uppercase mt-1">Wrong:</span>
+                                <div className="flex flex-wrap gap-1">
+                                  {result.wrongQuestionNumbers.map(num => (
+                                    <span key={num} className="bg-red-50 text-red-700 border border-red-100 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold">
+                                      #{num}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] font-bold text-green-600 uppercase flex items-center gap-1">
+                                <Check className="w-3 h-3" /> Perfect Score
+                              </span>
                             )}
                           </div>
-                        ))}
-                      </div>
-
-                      {/* NEW: Missed Questions Display */}
-                      <div className="mt-3 pt-3 border-t border-gray-100">
-                        {result.wrongQuestionNumbers.length > 0 ? (
-                          <div className="flex items-start gap-2">
-                            <span className="text-[10px] font-bold text-red-500 uppercase mt-1">Wrong:</span>
-                            <div className="flex flex-wrap gap-1">
-                              {result.wrongQuestionNumbers.map(num => (
-                                <span key={num} className="bg-red-50 text-red-700 border border-red-100 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold">
-                                  #{num}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] font-bold text-green-600 uppercase flex items-center gap-1">
-                            <Check className="w-3 h-3" /> Perfect Score
-                          </span>
-                        )}
-                      </div>
-
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -993,7 +1093,6 @@ function MCQGrader() {
             </div>
           </div>
         </div>
-        
       </div>
     </div>
   );
