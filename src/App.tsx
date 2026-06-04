@@ -73,12 +73,15 @@ const TRANSLATIONS = {
     rep_version: "Test Version:",
     rep_q: "Q#",
     rep_ans: "Correct Ans",
-    rep_rate: "Success Rate",
-    rep_analysis: "Item Difficulty Analysis",
-    rep_hard: "High Variance / Too Difficult (< 20%)",
-    rep_easy: "Low Discrimination / Too Easy (> 80%)",
-    rep_std: "Standard range",
-    rep_nodata: "No data"
+    rep_rate: "Difficulty (Success %)",
+    rep_disc: "Discrimination (D)",
+    rep_analysis: "Action Matrix Verdict",
+    rep_toxic: "Toxic Trap (D < 0) - PURGE",
+    rep_elite: "Elite (Hard but Fair) - KEEP",
+    rep_workhorse: "Workhorse (Good D) - KEEP",
+    rep_freebie: "Freebie (Too Easy) - REVIEW",
+    rep_std: "Standard / Marginal",
+    rep_nodata: "Not enough data"
   },
   ka: {
     // Navigation
@@ -149,12 +152,15 @@ const TRANSLATIONS = {
     rep_version: "ტესტის ვერსია:",
     rep_q: "კ#",
     rep_ans: "სწორი პასუხი",
-    rep_rate: "წარმატების %",
-    rep_analysis: "სირთულის ანალიზი",
-    rep_hard: "მაღალი ვარიაცია / ძალიან რთული (< 20%)",
-    rep_easy: "დაბალი დისკრიმინაცია / ძალიან მარტივი (> 80%)",
-    rep_std: "სტანდარტული ზღვარი",
-    rep_nodata: "მონაცემები არ არის"
+    rep_rate: "სირთულე (წარმატების %)",
+    rep_disc: "დისკრიმინაცია (D)",
+    rep_analysis: "მატრიცის ვერდიქტი",
+    rep_toxic: "ტოქსიკური ხაფანგი (D < 0) - წაშალეთ",
+    rep_elite: "ელიტური (რთული მაგრამ სამართლიანი) - დატოვეთ",
+    rep_workhorse: "იდეალური (კარგი D) - დატოვეთ",
+    rep_freebie: "ზედმეტად მარტივი - გადახედეთ",
+    rep_std: "სტანდარტული / ზღვრული",
+    rep_nodata: "არასაკმარისი მონაცემი"
   }
 };
 
@@ -163,58 +169,32 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('generator');
   const [lang, setLang] = useState('en');
 
-  // Helper translation function
   const t = (key) => TRANSLATIONS[lang][key] || key;
 
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-gray-800">
-      {/* Navigation Tabs - Hidden when printing */}
       <div className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10 print:hidden">
         <div className="max-w-5xl mx-auto px-4">
           <div className="flex items-center justify-between">
             <div className="flex space-x-8 overflow-x-auto">
-              <button
-                onClick={() => setActiveTab('generator')}
-                className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors whitespace-nowrap ${
-                  activeTab === 'generator' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <FileText className="w-4 h-4" />
-                {t('nav_generator')}
+              <button onClick={() => setActiveTab('generator')} className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'generator' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                <FileText className="w-4 h-4" /> {t('nav_generator')}
               </button>
-              <button
-                onClick={() => setActiveTab('answersheet')}
-                className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors whitespace-nowrap ${
-                  activeTab === 'answersheet' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <Grid className="w-4 h-4" />
-                {t('nav_answersheet')}
+              <button onClick={() => setActiveTab('answersheet')} className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'answersheet' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                <Grid className="w-4 h-4" /> {t('nav_answersheet')}
               </button>
-              <button
-                onClick={() => setActiveTab('grader')}
-                className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors whitespace-nowrap ${
-                  activeTab === 'grader' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <Award className="w-4 h-4" />
-                {t('nav_grader')}
+              <button onClick={() => setActiveTab('grader')} className={`py-4 px-2 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'grader' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                <Award className="w-4 h-4" /> {t('nav_grader')}
               </button>
             </div>
             
-            {/* Language Switcher */}
-            <button 
-              onClick={() => setLang(lang === 'en' ? 'ka' : 'en')}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-gray-100 text-sm font-medium text-gray-600 transition-colors border border-transparent hover:border-gray-200"
-            >
-              <Globe className="w-4 h-4" />
-              {t('lang_toggle')}
+            <button onClick={() => setLang(lang === 'en' ? 'ka' : 'en')} className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-gray-100 text-sm font-medium text-gray-600 transition-colors border border-transparent hover:border-gray-200">
+              <Globe className="w-4 h-4" /> {t('lang_toggle')}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main Content Area */}
       <div className="p-4 md:p-8 max-w-5xl mx-auto print:p-0 print:m-0 print:w-full print:max-w-none">
         {activeTab === 'generator' && <TestGenerator t={t} />}
         {activeTab === 'answersheet' && <AnswerSheetConstructor t={t} />}
@@ -226,10 +206,7 @@ export default function App() {
 
 // --- SUB-COMPONENT 1: TEST GENERATOR ---
 function TestGenerator({ t }) {
-  const [bases, setBases] = useState([
-    { id: 1, name: 'Base 1', content: [], count: 0, type: 'file' },
-    { id: 2, name: 'Base 2', content: [], count: 0, type: 'file' }
-  ]);
+  const [bases, setBases] = useState([{ id: 1, name: 'Base 1', content: [], count: 0, type: 'file' }, { id: 2, name: 'Base 2', content: [], count: 0, type: 'file' }]);
   const [generatedTest, setGeneratedTest] = useState([]);
   const [isRandomized, setIsRandomized] = useState(true);
   const [isChoiceRandomized, setIsChoiceRandomized] = useState(true);
@@ -247,10 +224,7 @@ function TestGenerator({ t }) {
 
   const resetApp = () => {
     if (window.confirm("Are you sure you want to clear all data and start over?")) {
-      setBases([
-        { id: 1, name: 'Base 1', content: [], count: 0, type: 'file' },
-        { id: 2, name: 'Base 2', content: [], count: 0, type: 'file' }
-      ]);
+      setBases([{ id: 1, name: 'Base 1', content: [], count: 0, type: 'file' }, { id: 2, name: 'Base 2', content: [], count: 0, type: 'file' }]);
       setGeneratedTest([]);
       setIsRandomized(true);
       setIsChoiceRandomized(true);
@@ -274,9 +248,7 @@ function TestGenerator({ t }) {
 
     const saveBlock = (block, type) => {
       let content = block.filter(line => line.trim() !== '').join('\n').trim();
-      if (type === 'standard') {
-        content = content.replace(/([^\n])\s+([A-Ea-e][\.\)]\s)/g, '$1\n$2');
-      }
+      if (type === 'standard') content = content.replace(/([^\n])\s+([A-Ea-e][\.\)]\s)/g, '$1\n$2');
       return content;
     };
 
@@ -297,15 +269,11 @@ function TestGenerator({ t }) {
         }
       } else {
         if (currentBlock.length > 0) {
-          if (currentBlockType === 'slash') {
-             currentBlock.push(line);
-          } else {
+          if (currentBlockType === 'slash') currentBlock.push(line);
+          else {
              let processedLine = line;
-             if (trimmed.startsWith('///')) {
-                processedLine = line.replace(/^\s*\/\/\/\s*/, 'choice. '); 
-             } else if (trimmed.startsWith('//')) {
-                processedLine = line.replace(/^\s*\/\/\s*/, 'choice. ') + ' *';
-             }
+             if (trimmed.startsWith('///')) processedLine = line.replace(/^\s*\/\/\/\s*/, 'choice. '); 
+             else if (trimmed.startsWith('//')) processedLine = line.replace(/^\s*\/\/\s*/, 'choice. ') + ' *';
              currentBlock.push(processedLine);
           }
         }
@@ -383,10 +351,8 @@ function TestGenerator({ t }) {
     setGeneratedTest(finalQuestions);
   };
 
-  const formatOutput = (q, i) => `${i + 1}. ${q}`;
-
   const copyToClipboard = () => {
-    const text = generatedTest.map((q, i) => formatOutput(q, i)).join('\n\n');
+    const text = generatedTest.map((q, i) => `${i + 1}. ${q}`).join('\n\n');
     const textArea = document.createElement("textarea");
     textArea.value = text;
     document.body.appendChild(textArea);
@@ -400,25 +366,20 @@ function TestGenerator({ t }) {
     if (!file) return;
 
     if (file.name.endsWith('.docx')) {
-      if (!window.mammoth) {
-        alert("Word document parser is loading...");
-        return;
-      }
+      if (!window.mammoth) return alert("Word document parser is loading...");
       const reader = new FileReader();
       reader.onload = (e) => {
-        const arrayBuffer = e.target?.result;
-        if (arrayBuffer) {
-          window.mammoth.extractRawText({ arrayBuffer })
+        if (e.target?.result) {
+          window.mammoth.extractRawText({ arrayBuffer: e.target.result })
             .then((result) => processTextContent(result.value, file.name, id))
-            .catch((err) => alert("Error reading Word file."));
+            .catch(() => alert("Error reading Word file."));
         }
       };
       reader.readAsArrayBuffer(file);
     } else {
       const reader = new FileReader();
       reader.onload = (e) => {
-        const result = e.target?.result;
-        if (typeof result === 'string') processTextContent(result, file.name, id);
+        if (typeof e.target?.result === 'string') processTextContent(e.target.result, file.name, id);
       };
       reader.readAsText(file);
     }
@@ -438,12 +399,6 @@ function TestGenerator({ t }) {
     setBases([...bases, { id: Date.now(), name: `Base ${newNum}`, content: [], count: 0, type: 'file' }]);
   };
 
-  const removeBase = (id) => setBases(bases.filter(base => base.id !== id));
-  
-  const updateCount = (id, newCount) => {
-    setBases(bases.map(base => base.id === id ? { ...base, count: parseInt(newCount) || 0 } : base));
-  };
-
   return (
     <div className="space-y-8 print:hidden">
       <div className="text-center space-y-2">
@@ -453,23 +408,16 @@ function TestGenerator({ t }) {
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <FileText className="w-5 h-5 text-indigo-600" />
-            {t('gen_bases')}
-          </h2>
+          <h2 className="text-lg font-semibold flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-600" />{t('gen_bases')}</h2>
           <div className="flex gap-2">
-            <button onClick={resetApp} className="flex items-center gap-1 text-sm bg-red-50 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors font-medium">
-              <RotateCcw className="w-4 h-4" /> {t('gen_reset')}
-            </button>
-            <button onClick={addBase} className="flex items-center gap-1 text-sm bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors font-medium">
-              <Plus className="w-4 h-4" /> {t('gen_add')}
-            </button>
+            <button onClick={resetApp} className="flex items-center gap-1 text-sm bg-red-50 text-red-700 px-3 py-1.5 rounded-lg font-medium"><RotateCcw className="w-4 h-4" /> {t('gen_reset')}</button>
+            <button onClick={addBase} className="flex items-center gap-1 text-sm bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg font-medium"><Plus className="w-4 h-4" /> {t('gen_add')}</button>
           </div>
         </div>
 
         <div className="space-y-3">
           {bases.map((base, index) => (
-            <div key={base.id} className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-lg border border-gray-100 bg-gray-50 hover:border-indigo-200 transition-all">
+            <div key={base.id} className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-lg border border-gray-100 bg-gray-50">
               <div className="flex-1 w-full sm:w-auto">
                 <div className="flex items-center gap-3">
                   <span className="bg-white text-gray-500 text-xs font-mono w-6 h-6 flex items-center justify-center rounded border border-gray-200">{index + 1}</span>
@@ -493,52 +441,44 @@ function TestGenerator({ t }) {
               <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
                 <div className="flex items-center gap-2">
                   <label className="text-sm text-gray-600 whitespace-nowrap">{t('gen_amount')}</label>
-                  <input type="number" min="0" max={base.content.length} value={base.count} onChange={(e) => updateCount(base.id, e.target.value)} className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-center" />
+                  <input type="number" min="0" max={base.content.length} value={base.count} onChange={(e) => setBases(bases.map(b => b.id === base.id ? { ...b, count: parseInt(e.target.value) || 0 } : b))} className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 outline-none text-center" />
                 </div>
-                <button onClick={() => removeBase(base.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"><Trash2 className="w-4 h-4" /></button>
+                <button onClick={() => setBases(bases.filter(b => b.id !== base.id))} className="p-2 text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
           ))}
-
           {bases.length === 0 && <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">{t('gen_empty')}</div>}
         </div>
       </div>
 
       <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
         <div className="flex flex-col sm:flex-row gap-4">
-          <label className="flex items-center gap-3 cursor-pointer select-none bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm hover:border-indigo-300">
-            <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out ${isRandomized ? 'bg-indigo-600' : 'bg-gray-300'}`}>
-              <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${isRandomized ? 'translate-x-4' : 'translate-x-0'}`} />
+          <label className="flex items-center gap-3 cursor-pointer select-none bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm">
+            <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ${isRandomized ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+              <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${isRandomized ? 'translate-x-4' : 'translate-x-0'}`} />
             </div>
             <input type="checkbox" checked={isRandomized} onChange={() => setIsRandomized(!isRandomized)} className="hidden" />
             <span className="text-sm font-medium text-gray-700 uppercase tracking-wide flex items-center gap-2"><Shuffle className="w-4 h-4" /> {t('gen_rand_order')}</span>
           </label>
-
-          <label className="flex items-center gap-3 cursor-pointer select-none bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm hover:border-indigo-300">
-            <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out ${isChoiceRandomized ? 'bg-indigo-600' : 'bg-gray-300'}`}>
-              <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${isChoiceRandomized ? 'translate-x-4' : 'translate-x-0'}`} />
+          <label className="flex items-center gap-3 cursor-pointer select-none bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm">
+            <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ${isChoiceRandomized ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+              <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${isChoiceRandomized ? 'translate-x-4' : 'translate-x-0'}`} />
             </div>
             <input type="checkbox" checked={isChoiceRandomized} onChange={() => setIsChoiceRandomized(!isChoiceRandomized)} className="hidden" />
             <span className="text-sm font-medium text-gray-700 uppercase tracking-wide flex items-center gap-2"><List className="w-4 h-4" /> {t('gen_rand_choices')}</span>
           </label>
         </div>
-
-        <button onClick={generateTest} className="w-full sm:w-auto bg-indigo-600 text-white px-8 py-3 rounded-lg shadow-md hover:bg-indigo-700 active:scale-95 transition-all font-semibold flex items-center justify-center gap-2">
-          <RefreshCw className="w-5 h-5" /> {t('gen_btn')}
-        </button>
+        <button onClick={generateTest} className="w-full sm:w-auto bg-indigo-600 text-white px-8 py-3 rounded-lg shadow-md font-semibold flex items-center justify-center gap-2"><RefreshCw className="w-5 h-5" /> {t('gen_btn')}</button>
       </div>
 
-      <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden flex flex-col min-h-[500px]">
+      <div className="bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col min-h-[500px]">
         <div className="bg-gray-50 border-b border-gray-200 px-6 py-4 flex justify-between items-center">
           <h2 className="text-lg font-bold text-gray-800">{t('gen_final')}</h2>
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-500">{t('gen_total')} <span className="font-semibold text-gray-900">{generatedTest.length}</span></span>
-            {generatedTest.length > 0 && (
-              <button onClick={copyToClipboard} className="flex items-center gap-1.5 text-xs bg-white border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50 transition-colors"><Copy className="w-3.5 h-3.5" /> {t('gen_copy')}</button>
-            )}
+            {generatedTest.length > 0 && <button onClick={copyToClipboard} className="flex items-center gap-1.5 text-xs bg-white border border-gray-300 px-3 py-1.5 rounded"><Copy className="w-3.5 h-3.5" /> {t('gen_copy')}</button>}
           </div>
         </div>
-        
         <div className="p-8 flex-1 bg-white relative">
           {generatedTest.length > 0 ? (
             <div className="space-y-6 font-serif text-lg leading-relaxed text-gray-800">
@@ -566,7 +506,7 @@ function TestGenerator({ t }) {
             </div>
             <div className="p-4 flex-1 flex flex-col gap-2">
               <p className="text-sm text-gray-500">{t('gen_paste_desc')}</p>
-              <textarea className="w-full flex-1 min-h-[300px] p-4 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none font-mono text-sm" value={pasteText} onChange={(e) => setPasteText(e.target.value)} />
+              <textarea className="w-full flex-1 min-h-[300px] p-4 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none font-mono text-sm" value={pasteText} onChange={(e) => setPasteText(e.target.value)} />
             </div>
             <div className="p-4 border-t border-gray-100 bg-gray-50 rounded-b-xl flex justify-end gap-3">
               <button onClick={() => setShowPasteModal(null)} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg text-sm font-medium">{t('gen_cancel')}</button>
@@ -622,8 +562,6 @@ function AnswerSheetConstructor({ t }) {
     });
   }, [numQuestions, layout.internalCols]);
 
-  const handlePrint = () => setTimeout(() => window.print(), 100);
-
   const copyForGoogleDocs = () => {
     if (!sheetRef.current) return;
     const range = document.createRange();
@@ -677,7 +615,6 @@ function AnswerSheetConstructor({ t }) {
   return (
     <div className="space-y-8">
       <style>{`@media print { @page { size: A4; margin: 0mm; } body { visibility: hidden; } #answer-sheet-container { visibility: visible !important; position: fixed; left: 0; top: 0; width: 210mm; height: 297mm; margin: 0; padding: 5mm; background: white; z-index: 9999; } #answer-sheet-container * { visibility: visible !important; } .print\\:hidden { display: none !important; } }`}</style>
-
       <div className="text-center space-y-2 print:hidden">
         <h1 className="text-3xl font-bold text-gray-900">{t('sheet_title')}</h1>
         <p className="text-gray-500">{t('sheet_subtitle')}</p>
@@ -688,29 +625,25 @@ function AnswerSheetConstructor({ t }) {
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_total')}</label>
           <input type="number" min="1" max="200" value={numQuestions} onChange={(e) => setNumQuestions(Number(e.target.value))} className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
         </div>
-
         <div className="space-y-1">
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_choices')}</label>
           <select value={numChoices} onChange={(e) => setNumChoices(Number(e.target.value))} className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
             <option value={3}>3 (a-c)</option><option value={4}>4 (a-d)</option><option value={5}>5 (a-e)</option><option value={6}>6 (a-f)</option>
           </select>
         </div>
-
         <div className="space-y-1">
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_cols')}</label>
           <select value={columns} onChange={(e) => setColumns(Number(e.target.value))} className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
             <option value={1}>{t('sheet_col_1')}</option><option value={2}>{t('sheet_col_2')}</option><option value={3}>{t('sheet_col_3')}</option><option value={4}>{t('sheet_col_4')}</option>
           </select>
         </div>
-
         <div className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
           <Settings className="w-4 h-4" />
           <span>{t('sheet_fitting')} {layout.ticketsPerSheet} {t('sheet_tickets')} ({layout.rows}x{layout.cols})</span>
         </div>
-
         <div className="flex gap-2">
           <button onClick={copyForGoogleDocs} className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition-colors flex items-center gap-2"><Copy className="w-4 h-4" /> {t('sheet_btn_copy')}</button>
-          <button onClick={handlePrint} className="bg-gray-800 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-gray-900 transition-colors flex items-center gap-2"><Printer className="w-4 h-4" /> {t('sheet_btn_print')}</button>
+          <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-gray-800 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-gray-900 transition-colors flex items-center gap-2"><Printer className="w-4 h-4" /> {t('sheet_btn_print')}</button>
         </div>
       </div>
 
@@ -741,13 +674,14 @@ function AnswerSheetConstructor({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 3: MCQ GRADER (REFACTORED) ---
+// --- SUB-COMPONENT 3: MCQ GRADER (REFACTORED WITH D-INDEX) ---
 function MCQGrader({ t }) {
   const [keysInput, setKeysInput] = useState('');
   const [studentsInput, setStudentsInput] = useState('');
   const [showReport, setShowReport] = useState(false);
 
-  const DIFFICULTY_TOO_HARD = 20; 
+  // Psychometric Thresholds
+  const DIFFICULTY_TOO_HARD = 30; 
   const DIFFICULTY_TOO_EASY = 80;
 
   const parsedKeys = useMemo(() => {
@@ -808,7 +742,7 @@ function MCQGrader({ t }) {
     const statsByVersion = {};
 
     Object.keys(parsedKeys).forEach(version => {
-      statsByVersion[version] = { totalStudents: 0, averageScore: 0, highestScore: 0, itemStats: Array.from({ length: parsedKeys[version].length }, (_, i) => ({ questionIndex: i + 1, correctCount: 0, expectedAnswer: parsedKeys[version][i] })) };
+      statsByVersion[version] = { totalStudents: 0, averageScore: 0, highestScore: 0, itemStats: Array.from({ length: parsedKeys[version].length }, (_, i) => ({ questionIndex: i + 1, correctCount: 0, expectedAnswer: parsedKeys[version][i], discrimination: null })) };
     });
 
     validResults.forEach(student => {
@@ -820,16 +754,46 @@ function MCQGrader({ t }) {
       student.comparison.forEach((comp, idx) => { if (comp.isCorrect && vStats.itemStats[idx]) vStats.itemStats[idx].correctCount++; });
     });
 
+    // Calculate Item Difficulty and Discrimination Index
     Object.keys(statsByVersion).forEach(version => {
       const vStats = statsByVersion[version];
+      const studentsForVersion = validResults.filter(s => s.version === version).sort((a, b) => b.score - a.score);
+      const n = studentsForVersion.length;
+      
+      // We need at least 3 students to do a meaningful top/bottom split
+      const canCalculateD = n >= 3;
+      const groupSize = Math.max(1, Math.floor(n * 0.33));
+      const upperGroup = studentsForVersion.slice(0, groupSize);
+      const lowerGroup = studentsForVersion.slice(n - groupSize);
+
       if (vStats.totalStudents > 0) {
         vStats.averageScore = (vStats.averageScore / vStats.totalStudents).toFixed(1);
-        vStats.itemStats = vStats.itemStats.map(item => {
-          const percentCorrect = Math.round((item.correctCount / vStats.totalStudents) * 100);
+        
+        vStats.itemStats = vStats.itemStats.map((item, idx) => {
+          const pValue = Math.round((item.correctCount / vStats.totalStudents) * 100);
+          
+          let dIndex = null;
           let flag = null;
-          if (percentCorrect < DIFFICULTY_TOO_HARD) flag = 'REVIEW_HARD';
-          else if (percentCorrect > DIFFICULTY_TOO_EASY) flag = 'REVIEW_EASY';
-          return { ...item, percentCorrect, flag };
+
+          if (canCalculateD) {
+            const upperCorrect = upperGroup.filter(s => s.comparison[idx].isCorrect).length;
+            const lowerCorrect = lowerGroup.filter(s => s.comparison[idx].isCorrect).length;
+            const pUpper = upperCorrect / groupSize;
+            const pLower = lowerCorrect / groupSize;
+            dIndex = parseFloat((pUpper - pLower).toFixed(2));
+
+            // Apply Action Matrix Logic
+            if (dIndex < 0 && pValue < DIFFICULTY_TOO_HARD) flag = 'TOXIC';
+            else if (dIndex >= 0.25 && pValue < DIFFICULTY_TOO_HARD) flag = 'ELITE';
+            else if (dIndex >= 0.25 && pValue >= 40 && pValue <= 80) flag = 'WORKHORSE';
+            else if (pValue > DIFFICULTY_TOO_EASY) flag = 'FREEBIE';
+          } else {
+             // Fallback if not enough students for D-Index
+             if (pValue < DIFFICULTY_TOO_HARD) flag = 'HARD';
+             if (pValue > DIFFICULTY_TOO_EASY) flag = 'FREEBIE';
+          }
+
+          return { ...item, percentCorrect: pValue, discrimination: dIndex, flag };
         });
       }
     });
@@ -839,7 +803,7 @@ function MCQGrader({ t }) {
 
   if (showReport) {
     return (
-      <div className="bg-white p-8 max-w-4xl mx-auto rounded-xl shadow-sm print:shadow-none print:p-0">
+      <div className="bg-white p-8 max-w-5xl mx-auto rounded-xl shadow-sm print:shadow-none print:p-0">
         <div className="flex justify-between items-center mb-8 print:hidden">
           <h2 className="text-2xl font-bold text-gray-800">{t('rep_title')}</h2>
           <div className="flex gap-4">
@@ -865,6 +829,7 @@ function MCQGrader({ t }) {
                     <th className="px-4 py-3 font-semibold w-16 text-center">{t('rep_q')}</th>
                     <th className="px-4 py-3 font-semibold w-24 text-center">{t('rep_ans')}</th>
                     <th className="px-4 py-3 font-semibold w-32 text-center">{t('rep_rate')}</th>
+                    <th className="px-4 py-3 font-semibold w-32 text-center">{t('rep_disc')}</th>
                     <th className="px-4 py-3 font-semibold">{t('rep_analysis')}</th>
                   </tr>
                 </thead>
@@ -873,16 +838,32 @@ function MCQGrader({ t }) {
                     <tr key={stat.questionIndex} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                       <td className="px-4 py-3 text-center font-medium text-gray-900">{stat.questionIndex}</td>
                       <td className="px-4 py-3 text-center font-mono">{stat.expectedAnswer}</td>
+                      
+                      {/* Difficulty Index */}
                       <td className="px-4 py-3 text-center">
-                        <span className={`font-bold ${stat.flag === 'REVIEW_HARD' ? 'text-red-600' : stat.flag === 'REVIEW_EASY' ? 'text-yellow-600' : 'text-green-600'}`}>
+                        <span className={`font-bold ${stat.percentCorrect < 30 ? 'text-red-600' : stat.percentCorrect > 80 ? 'text-yellow-600' : 'text-gray-700'}`}>
                           {data.totalStudents > 0 ? stat.percentCorrect : 0}%
                         </span>
                       </td>
+
+                      {/* Discrimination Index */}
+                      <td className="px-4 py-3 text-center">
+                        {stat.discrimination !== null ? (
+                          <span className={`font-bold ${stat.discrimination < 0 ? 'text-red-600' : stat.discrimination > 0.25 ? 'text-green-600' : 'text-gray-500'}`}>
+                            {stat.discrimination > 0 ? '+' : ''}{stat.discrimination}
+                          </span>
+                        ) : <span className="text-gray-300">-</span>}
+                      </td>
+
+                      {/* The Matrix Verdict */}
                       <td className="px-4 py-3">
-                        {stat.flag === 'REVIEW_HARD' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 border border-red-200"><AlertCircle className="w-3.5 h-3.5" /> {t('rep_hard')}</span>}
-                        {stat.flag === 'REVIEW_EASY' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-200"><Activity className="w-3.5 h-3.5" /> {t('rep_easy')}</span>}
-                        {!stat.flag && data.totalStudents > 0 && <span className="text-xs text-gray-500">{t('rep_std')}</span>}
-                        {data.totalStudents === 0 && <span className="text-xs text-gray-400">{t('rep_nodata')}</span>}
+                        {stat.flag === 'TOXIC' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-red-100 text-red-800 border border-red-200"><AlertCircle className="w-3.5 h-3.5" /> {t('rep_toxic')}</span>}
+                        {stat.flag === 'ELITE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200"><Award className="w-3.5 h-3.5" /> {t('rep_elite')}</span>}
+                        {stat.flag === 'WORKHORSE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-green-100 text-green-800 border border-green-200"><Check className="w-3.5 h-3.5" /> {t('rep_workhorse')}</span>}
+                        {stat.flag === 'FREEBIE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-200"><Activity className="w-3.5 h-3.5" /> {t('rep_freebie')}</span>}
+                        
+                        {!['TOXIC', 'ELITE', 'WORKHORSE', 'FREEBIE'].includes(stat.flag) && data.totalStudents >= 3 && <span className="text-xs text-gray-500">{t('rep_std')}</span>}
+                        {data.totalStudents > 0 && data.totalStudents < 3 && <span className="text-xs text-gray-400">{t('rep_nodata')}</span>}
                       </td>
                     </tr>
                   ))}
@@ -917,10 +898,9 @@ function MCQGrader({ t }) {
               <h2 className="font-semibold text-gray-700">{t('grad_step1')}</h2>
             </div>
             <div className="p-4">
-              <textarea value={keysInput} onChange={(e) => setKeysInput(e.target.value.toUpperCase())} placeholder={`A AAACBCAD\nB BBBCBCAD\nC ABABABAB`} className="w-full h-32 font-mono text-sm p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none" />
+              <textarea value={keysInput} onChange={(e) => setKeysInput(e.target.value.toUpperCase())} placeholder={`A AAACBCAD\nB BBBCBCAD\nC ABABABAB`} className="w-full h-32 font-mono text-sm p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none" />
             </div>
           </div>
-
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[500px]">
             <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
               <h2 className="font-semibold text-gray-700">{t('grad_step2')}</h2>
