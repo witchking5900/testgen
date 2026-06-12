@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle, BarChart, Activity, Globe } from 'lucide-react';
+import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle, BarChart, Activity, Globe, Slash } from 'lucide-react';
 
 // --- TRANSLATION DICTIONARY ---
 const TRANSLATIONS = {
@@ -81,7 +81,10 @@ const TRANSLATIONS = {
     rep_workhorse: "Workhorse (Good D) - KEEP",
     rep_freebie: "Freebie (Too Easy) - REVIEW",
     rep_std: "Standard / Marginal",
-    rep_nodata: "Not enough data"
+    rep_nodata: "Not enough data",
+    rep_void_badge: "VOIDED - Excluded from stats",
+    tooltip_void: "Voided: +1 Free Point",
+    tooltip_exp: "Exp:"
   },
   ka: {
     // Navigation
@@ -160,7 +163,10 @@ const TRANSLATIONS = {
     rep_workhorse: "იდეალური (კარგი D) - დატოვეთ",
     rep_freebie: "ზედმეტად მარტივი - გადახედეთ",
     rep_std: "სტანდარტული / ზღვრული",
-    rep_nodata: "არასაკმარისი მონაცემი"
+    rep_nodata: "არასაკმარისი მონაცემი",
+    rep_void_badge: "გაუქმებულია - სტატისტიკის გარეშე",
+    tooltip_void: "გაუქმებულია: +1 ქულა",
+    tooltip_exp: "სწორი:"
   }
 };
 
@@ -674,7 +680,7 @@ function AnswerSheetConstructor({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 3: MCQ GRADER (REFACTORED WITH D-INDEX) ---
+// --- SUB-COMPONENT 3: MCQ GRADER (REFACTORED WITH D-INDEX & VOIDED Qs) ---
 function MCQGrader({ t }) {
   const [keysInput, setKeysInput] = useState('');
   const [studentsInput, setStudentsInput] = useState('');
@@ -693,6 +699,7 @@ function MCQGrader({ t }) {
       const parts = cleanLine.split(/\s+/);
       if (parts.length >= 2) {
         const version = parts[0].toUpperCase();
+        // Allow V (for Voided) and X (for blank guesses) to pass through the regex.
         const answers = parts[parts.length - 1].toUpperCase().replace(/[^A-Z0-9]/g, '');
         keys[version] = answers;
       }
@@ -724,12 +731,21 @@ function MCQGrader({ t }) {
         for (let i = 0; i < key.length; i++) {
           const keyChar = key[i];
           const studentChar = answers[i] || '-';
-          const isCorrect = keyChar === studentChar;
+          
+          let isCorrect = false;
+          let isVoid = keyChar === 'V'; // Trigger the voided state if the key is V
 
-          if (isCorrect) score++;
-          else wrongQuestionNumbers.push(i + 1);
+          if (isVoid) {
+            isCorrect = true; // Auto-grant the point
+            score++;
+          } else if (keyChar === studentChar) {
+            isCorrect = true;
+            score++;
+          } else {
+            wrongQuestionNumbers.push(i + 1);
+          }
 
-          comparison.push({ index: i + 1, keyChar, studentChar, isCorrect });
+          comparison.push({ index: i + 1, keyChar, studentChar, isCorrect, isVoid });
         }
 
         const percentage = key.length > 0 ? Math.round((score / key.length) * 100) : 0;
@@ -742,7 +758,18 @@ function MCQGrader({ t }) {
     const statsByVersion = {};
 
     Object.keys(parsedKeys).forEach(version => {
-      statsByVersion[version] = { totalStudents: 0, averageScore: 0, highestScore: 0, itemStats: Array.from({ length: parsedKeys[version].length }, (_, i) => ({ questionIndex: i + 1, correctCount: 0, expectedAnswer: parsedKeys[version][i], discrimination: null })) };
+      statsByVersion[version] = { 
+        totalStudents: 0, 
+        averageScore: 0, 
+        highestScore: 0, 
+        itemStats: Array.from({ length: parsedKeys[version].length }, (_, i) => ({ 
+          questionIndex: i + 1, 
+          correctCount: 0, 
+          expectedAnswer: parsedKeys[version][i], 
+          discrimination: null,
+          isVoid: parsedKeys[version][i] === 'V'
+        })) 
+      };
     });
 
     validResults.forEach(student => {
@@ -751,7 +778,12 @@ function MCQGrader({ t }) {
       vStats.totalStudents++;
       vStats.averageScore += student.score;
       if (student.score > vStats.highestScore) vStats.highestScore = student.score;
-      student.comparison.forEach((comp, idx) => { if (comp.isCorrect && vStats.itemStats[idx]) vStats.itemStats[idx].correctCount++; });
+      student.comparison.forEach((comp, idx) => { 
+        // Only count 'correctCount' for statistics if the item is NOT voided.
+        if (comp.isCorrect && vStats.itemStats[idx] && !vStats.itemStats[idx].isVoid) {
+          vStats.itemStats[idx].correctCount++; 
+        }
+      });
     });
 
     // Calculate Item Difficulty and Discrimination Index
@@ -760,7 +792,6 @@ function MCQGrader({ t }) {
       const studentsForVersion = validResults.filter(s => s.version === version).sort((a, b) => b.score - a.score);
       const n = studentsForVersion.length;
       
-      // We need at least 3 students to do a meaningful top/bottom split
       const canCalculateD = n >= 3;
       const groupSize = Math.max(1, Math.floor(n * 0.33));
       const upperGroup = studentsForVersion.slice(0, groupSize);
@@ -770,6 +801,11 @@ function MCQGrader({ t }) {
         vStats.averageScore = (vStats.averageScore / vStats.totalStudents).toFixed(1);
         
         vStats.itemStats = vStats.itemStats.map((item, idx) => {
+          // If the item is marked as voided ('V'), completely skip the math and flag it.
+          if (item.isVoid) {
+            return { ...item, percentCorrect: null, discrimination: null, flag: 'VOID' };
+          }
+
           const pValue = Math.round((item.correctCount / vStats.totalStudents) * 100);
           
           let dIndex = null;
@@ -841,9 +877,13 @@ function MCQGrader({ t }) {
                       
                       {/* Difficulty Index */}
                       <td className="px-4 py-3 text-center">
-                        <span className={`font-bold ${stat.percentCorrect < 30 ? 'text-red-600' : stat.percentCorrect > 80 ? 'text-yellow-600' : 'text-gray-700'}`}>
-                          {data.totalStudents > 0 ? stat.percentCorrect : 0}%
-                        </span>
+                        {stat.isVoid ? (
+                           <span className="font-bold text-gray-300">-</span>
+                        ) : (
+                           <span className={`font-bold ${stat.percentCorrect < 30 ? 'text-red-600' : stat.percentCorrect > 80 ? 'text-yellow-600' : 'text-gray-700'}`}>
+                             {data.totalStudents > 0 ? stat.percentCorrect : 0}%
+                           </span>
+                        )}
                       </td>
 
                       {/* Discrimination Index */}
@@ -852,18 +892,19 @@ function MCQGrader({ t }) {
                           <span className={`font-bold ${stat.discrimination < 0 ? 'text-red-600' : stat.discrimination > 0.25 ? 'text-green-600' : 'text-gray-500'}`}>
                             {stat.discrimination > 0 ? '+' : ''}{stat.discrimination}
                           </span>
-                        ) : <span className="text-gray-300">-</span>}
+                        ) : <span className="font-bold text-gray-300">-</span>}
                       </td>
 
                       {/* The Matrix Verdict */}
                       <td className="px-4 py-3">
+                        {stat.flag === 'VOID' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 text-gray-600 border border-gray-300"><Slash className="w-3.5 h-3.5" /> {t('rep_void_badge')}</span>}
                         {stat.flag === 'TOXIC' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-red-100 text-red-800 border border-red-200"><AlertCircle className="w-3.5 h-3.5" /> {t('rep_toxic')}</span>}
                         {stat.flag === 'ELITE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200"><Award className="w-3.5 h-3.5" /> {t('rep_elite')}</span>}
                         {stat.flag === 'WORKHORSE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-green-100 text-green-800 border border-green-200"><Check className="w-3.5 h-3.5" /> {t('rep_workhorse')}</span>}
                         {stat.flag === 'FREEBIE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-200"><Activity className="w-3.5 h-3.5" /> {t('rep_freebie')}</span>}
                         
-                        {!['TOXIC', 'ELITE', 'WORKHORSE', 'FREEBIE'].includes(stat.flag) && data.totalStudents >= 3 && <span className="text-xs text-gray-500">{t('rep_std')}</span>}
-                        {data.totalStudents > 0 && data.totalStudents < 3 && <span className="text-xs text-gray-400">{t('rep_nodata')}</span>}
+                        {!['VOID', 'TOXIC', 'ELITE', 'WORKHORSE', 'FREEBIE'].includes(stat.flag) && data.totalStudents >= 3 && <span className="text-xs text-gray-500">{t('rep_std')}</span>}
+                        {data.totalStudents > 0 && data.totalStudents < 3 && !stat.isVoid && <span className="text-xs text-gray-400">{t('rep_nodata')}</span>}
                       </td>
                     </tr>
                   ))}
@@ -898,7 +939,7 @@ function MCQGrader({ t }) {
               <h2 className="font-semibold text-gray-700">{t('grad_step1')}</h2>
             </div>
             <div className="p-4">
-              <textarea value={keysInput} onChange={(e) => setKeysInput(e.target.value.toUpperCase())} placeholder={`A AAACBCAD\nB BBBCBCAD\nC ABABABAB`} className="w-full h-32 font-mono text-sm p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none" />
+              <textarea value={keysInput} onChange={(e) => setKeysInput(e.target.value.toUpperCase())} placeholder={`A AAACBCAD\nB BBBCBCAD\nC ABABABAB\n(Type 'V' for a voided question)`} className="w-full h-32 font-mono text-sm p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none" />
             </div>
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[500px]">
@@ -943,8 +984,15 @@ function MCQGrader({ t }) {
                           <div className="flex flex-wrap gap-1 mb-2">
                             {result.comparison.map((item, i) => (
                               <div key={i} className="flex flex-col items-center group relative">
-                                <div className={`w-6 h-8 flex items-center justify-center rounded text-xs font-bold select-none cursor-help ${item.isCorrect ? 'bg-green-500 text-white' : 'bg-red-500 text-white'} ${item.studentChar === '-' ? 'opacity-50' : ''}`}>{item.studentChar}</div>
-                                {!item.isCorrect && <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none">Exp: {item.keyChar}</div>}
+                                <div className={`w-6 h-8 flex items-center justify-center rounded text-xs font-bold select-none cursor-help 
+                                  ${item.isVoid ? 'bg-indigo-500 text-white' : item.isCorrect ? 'bg-green-500 text-white' : 'bg-red-500 text-white'} 
+                                  ${item.studentChar === '-' || item.studentChar === 'X' ? 'opacity-50' : ''}`}>
+                                  {item.studentChar}
+                                </div>
+                                
+                                <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none">
+                                  {item.isVoid ? t('tooltip_void') : !item.isCorrect ? `${t('tooltip_exp')} ${item.keyChar}` : ''}
+                                </div>
                               </div>
                             ))}
                           </div>
