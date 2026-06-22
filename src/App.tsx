@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle, BarChart, Activity, Globe, Slash } from 'lucide-react';
+import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle, BarChart, Activity, Globe, Slash, Hash } from 'lucide-react';
 
 // --- TRANSLATION DICTIONARY ---
 const TRANSLATIONS = {
@@ -23,6 +23,7 @@ const TRANSLATIONS = {
     gen_paste: "Paste Text",
     gen_rand_order: "Randomize Order",
     gen_rand_choices: "Randomize Choices",
+    gen_numbering: "Show Numbering",
     gen_btn: "Generate Test",
     gen_final: "Final Test",
     gen_total: "Total Questions:",
@@ -105,6 +106,7 @@ const TRANSLATIONS = {
     gen_paste: "ტექსტის ჩასმა",
     gen_rand_order: "რიგითობის არევა",
     gen_rand_choices: "პასუხების არევა",
+    gen_numbering: "ნუმერაცია",
     gen_btn: "ტესტის გენერირება",
     gen_final: "საბოლოო ტესტი",
     gen_total: "სულ კითხვა:",
@@ -216,6 +218,7 @@ function TestGenerator({ t }) {
   const [generatedTest, setGeneratedTest] = useState([]);
   const [isRandomized, setIsRandomized] = useState(true);
   const [isChoiceRandomized, setIsChoiceRandomized] = useState(true);
+  const [showNumbering, setShowNumbering] = useState(true);
   const [showPasteModal, setShowPasteModal] = useState(null);
   const [pasteText, setPasteText] = useState('');
 
@@ -234,6 +237,7 @@ function TestGenerator({ t }) {
       setGeneratedTest([]);
       setIsRandomized(true);
       setIsChoiceRandomized(true);
+      setShowNumbering(true);
     }
   };
 
@@ -358,7 +362,7 @@ function TestGenerator({ t }) {
   };
 
   const copyToClipboard = () => {
-    const text = generatedTest.map((q, i) => `${i + 1}. ${q}`).join('\n\n');
+    const text = generatedTest.map((q, i) => showNumbering ? `${i + 1}. ${q}` : q).join('\n\n');
     const textArea = document.createElement("textarea");
     textArea.value = text;
     document.body.appendChild(textArea);
@@ -458,7 +462,7 @@ function TestGenerator({ t }) {
       </div>
 
       <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-4">
           <label className="flex items-center gap-3 cursor-pointer select-none bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm">
             <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ${isRandomized ? 'bg-indigo-600' : 'bg-gray-300'}`}>
               <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${isRandomized ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -472,6 +476,13 @@ function TestGenerator({ t }) {
             </div>
             <input type="checkbox" checked={isChoiceRandomized} onChange={() => setIsChoiceRandomized(!isChoiceRandomized)} className="hidden" />
             <span className="text-sm font-medium text-gray-700 uppercase tracking-wide flex items-center gap-2"><List className="w-4 h-4" /> {t('gen_rand_choices')}</span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer select-none bg-white px-4 py-2 rounded-lg border border-gray-200 shadow-sm">
+            <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ${showNumbering ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+              <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${showNumbering ? 'translate-x-4' : 'translate-x-0'}`} />
+            </div>
+            <input type="checkbox" checked={showNumbering} onChange={() => setShowNumbering(!showNumbering)} className="hidden" />
+            <span className="text-sm font-medium text-gray-700 uppercase tracking-wide flex items-center gap-2"><Hash className="w-4 h-4" /> {t('gen_numbering')}</span>
           </label>
         </div>
         <button onClick={generateTest} className="w-full sm:w-auto bg-indigo-600 text-white px-8 py-3 rounded-lg shadow-md font-semibold flex items-center justify-center gap-2"><RefreshCw className="w-5 h-5" /> {t('gen_btn')}</button>
@@ -490,7 +501,7 @@ function TestGenerator({ t }) {
             <div className="space-y-6 font-serif text-lg leading-relaxed text-gray-800">
               {generatedTest.map((question, idx) => (
                 <div key={idx} className="flex gap-4">
-                  <span className="font-bold text-gray-400 select-none w-8 text-right flex-shrink-0">{idx + 1}.</span>
+                  {showNumbering && <span className="font-bold text-gray-400 select-none w-8 text-right flex-shrink-0">{idx + 1}.</span>}
                   <p className="whitespace-pre-wrap">{question}</p>
                 </div>
               ))}
