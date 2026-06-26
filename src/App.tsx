@@ -538,7 +538,7 @@ function TestGenerator({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR ---
+// --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR (UPDATED FOR SPACING) ---
 function AnswerSheetConstructor({ t }) {
   const [numQuestions, setNumQuestions] = useState(20);
   const [numChoices, setNumChoices] = useState(4);
@@ -606,10 +606,12 @@ function AnswerSheetConstructor({ t }) {
       </table>
       <div style={{ flex: 1, display: 'flex' }}>
         {internalColumnData.map((nums, colIdx) => (
-          <div key={colIdx} style={{ flex: 1, padding: '0 2px', borderRight: colIdx < layout.internalCols - 1 ? '1px dashed #ccc' : 'none' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: ticketStyle.fontSize, fontFamily: 'serif' }}>
+          <div key={colIdx} style={{ flex: 1, padding: '0 2px', borderRight: colIdx < layout.internalCols - 1 ? '1px dashed #ccc' : 'none', display: 'flex', flexDirection: 'column' }}>
+            {/* Added height: 100% to table to force it to stretch into the blank space */}
+            <table style={{ width: '100%', height: '100%', borderCollapse: 'collapse', fontSize: ticketStyle.fontSize, fontFamily: 'serif' }}>
               <thead>
-                <tr style={{ backgroundColor: '#222', color: 'white' }}>
+                {/* Added height: 1px to the header so only the question rows stretch, not the header */}
+                <tr style={{ backgroundColor: '#222', color: 'white', height: '1px' }}>
                   <th style={{ border: '1px solid #000', padding: ticketStyle.cellPadding, textAlign: 'center', width: ticketStyle.numWidth }}>#</th>
                   <th style={{ border: '1px solid #000', padding: ticketStyle.cellPadding, textAlign: 'center' }} colSpan={numChoices}>{t('sheet_ans')}</th>
                 </tr>
