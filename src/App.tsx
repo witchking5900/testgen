@@ -76,6 +76,7 @@ const TRANSLATIONS = {
     rep_ans: "Correct Ans",
     rep_rate: "Difficulty (Success %)",
     rep_disc: "Discrimination (D)",
+    rep_de: "Distractor Eff.",
     rep_analysis: "Action Matrix Verdict",
     rep_toxic: "Toxic Trap (D < 0) - PURGE",
     rep_elite: "Elite (Hard but Fair) - KEEP",
@@ -159,6 +160,7 @@ const TRANSLATIONS = {
     rep_ans: "სწორი პასუხი",
     rep_rate: "სირთულე (წარმატების %)",
     rep_disc: "დისკრიმინაცია (D)",
+    rep_de: "დისტრაქტ. ეფექტ.",
     rep_analysis: "მატრიცის ვერდიქტი",
     rep_toxic: "ტოქსიკური ხაფანგი (D < 0) - წაშალეთ",
     rep_elite: "ელიტური (რთული მაგრამ სამართლიანი) - დატოვეთ",
@@ -691,7 +693,7 @@ function AnswerSheetConstructor({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 3: MCQ GRADER (REFACTORED WITH D-INDEX & VOIDED Qs) ---
+// --- SUB-COMPONENT 3: MCQ GRADER (UPDATED WITH DISTRACTOR EFFICIENCY) ---
 function MCQGrader({ t }) {
   const [keysInput, setKeysInput] = useState('');
   const [studentsInput, setStudentsInput] = useState('');
@@ -710,7 +712,6 @@ function MCQGrader({ t }) {
       const parts = cleanLine.split(/\s+/);
       if (parts.length >= 2) {
         const version = parts[0].toUpperCase();
-        // Allow V (for Voided) and X (for blank guesses) to pass through the regex.
         const answers = parts[parts.length - 1].toUpperCase().replace(/[^A-Z0-9]/g, '');
         keys[version] = answers;
       }
@@ -744,10 +745,10 @@ function MCQGrader({ t }) {
           const studentChar = answers[i] || '-';
           
           let isCorrect = false;
-          let isVoid = keyChar === 'V'; // Trigger the voided state if the key is V
+          let isVoid = keyChar === 'V';
 
           if (isVoid) {
-            isCorrect = true; // Auto-grant the point
+            isCorrect = true; 
             score++;
           } else if (keyChar === studentChar) {
             isCorrect = true;
@@ -778,7 +779,9 @@ function MCQGrader({ t }) {
           correctCount: 0, 
           expectedAnswer: parsedKeys[version][i], 
           discrimination: null,
-          isVoid: parsedKeys[version][i] === 'V'
+          distractorEfficiency: null,
+          isVoid: parsedKeys[version][i] === 'V',
+          answerFrequencies: {} // Track how many times each answer is picked
         })) 
       };
     });
@@ -786,18 +789,26 @@ function MCQGrader({ t }) {
     validResults.forEach(student => {
       const vStats = statsByVersion[student.version];
       if (!vStats) return;
+      
       vStats.totalStudents++;
       vStats.averageScore += student.score;
       if (student.score > vStats.highestScore) vStats.highestScore = student.score;
+      
       student.comparison.forEach((comp, idx) => { 
-        // Only count 'correctCount' for statistics if the item is NOT voided.
-        if (comp.isCorrect && vStats.itemStats[idx] && !vStats.itemStats[idx].isVoid) {
-          vStats.itemStats[idx].correctCount++; 
+        if (vStats.itemStats[idx] && !vStats.itemStats[idx].isVoid) {
+          if (comp.isCorrect) {
+            vStats.itemStats[idx].correctCount++; 
+          }
+          // Record frequency of every chosen option (excluding blanks/voids)
+          const chosen = comp.studentChar;
+          if (/^[A-Z0-9]$/.test(chosen) && chosen !== 'X' && chosen !== 'V') {
+            vStats.itemStats[idx].answerFrequencies[chosen] = (vStats.itemStats[idx].answerFrequencies[chosen] || 0) + 1;
+          }
         }
       });
     });
 
-    // Calculate Item Difficulty and Discrimination Index
+    // Calculate Difficulty, Discrimination, and DE
     Object.keys(statsByVersion).forEach(version => {
       const vStats = statsByVersion[version];
       const studentsForVersion = validResults.filter(s => s.version === version).sort((a, b) => b.score - a.score);
@@ -808,13 +819,19 @@ function MCQGrader({ t }) {
       const upperGroup = studentsForVersion.slice(0, groupSize);
       const lowerGroup = studentsForVersion.slice(n - groupSize);
 
+      // Determine the maximum choice letter used in this version (Assume at least A-D)
+      const allChars = new Set();
+      parsedKeys[version].split('').forEach(c => { if(/^[A-Z]$/.test(c) && c !== 'V') allChars.add(c); });
+      studentsForVersion.forEach(s => s.answers.split('').forEach(c => { if(/^[A-Z]$/.test(c) && c !== 'X') allChars.add(c); }));
+      const maxCharCode = Array.from(allChars).reduce((max, char) => Math.max(max, char.charCodeAt(0)), 68); // 68 is 'D'
+      const expectedOptionsCount = maxCharCode - 64; // e.g., 'D' -> 4 options, 'E' -> 5
+
       if (vStats.totalStudents > 0) {
         vStats.averageScore = (vStats.averageScore / vStats.totalStudents).toFixed(1);
         
         vStats.itemStats = vStats.itemStats.map((item, idx) => {
-          // If the item is marked as voided ('V'), completely skip the math and flag it.
           if (item.isVoid) {
-            return { ...item, percentCorrect: null, discrimination: null, flag: 'VOID' };
+            return { ...item, percentCorrect: null, discrimination: null, distractorEfficiency: null, flag: 'VOID' };
           }
 
           const pValue = Math.round((item.correctCount / vStats.totalStudents) * 100);
@@ -829,18 +846,35 @@ function MCQGrader({ t }) {
             const pLower = lowerCorrect / groupSize;
             dIndex = parseFloat((pUpper - pLower).toFixed(2));
 
-            // Apply Action Matrix Logic
             if (dIndex < 0 && pValue < DIFFICULTY_TOO_HARD) flag = 'TOXIC';
             else if (dIndex >= 0.25 && pValue < DIFFICULTY_TOO_HARD) flag = 'ELITE';
             else if (dIndex >= 0.25 && pValue >= 40 && pValue <= 80) flag = 'WORKHORSE';
             else if (pValue > DIFFICULTY_TOO_EASY) flag = 'FREEBIE';
           } else {
-             // Fallback if not enough students for D-Index
              if (pValue < DIFFICULTY_TOO_HARD) flag = 'HARD';
              if (pValue > DIFFICULTY_TOO_EASY) flag = 'FREEBIE';
           }
 
-          return { ...item, percentCorrect: pValue, discrimination: dIndex, flag };
+          // Distractor Efficiency Calculation
+          const totalDistractors = expectedOptionsCount - 1;
+          let functionalDistractors = 0;
+          
+          // Generate array of expected choices (e.g., ['A', 'B', 'C', 'D'])
+          const choiceArray = Array.from({ length: expectedOptionsCount }, (_, i) => String.fromCharCode(65 + i));
+          
+          choiceArray.forEach(choice => {
+             if (choice !== item.expectedAnswer) {
+                 const count = item.answerFrequencies[choice] || 0;
+                 // A distractor is functional if > 0 students picked it
+                 if (count > 0) {
+                     functionalDistractors++;
+                 }
+             }
+          });
+
+          const deValue = totalDistractors > 0 ? Math.round((functionalDistractors / totalDistractors) * 100) : null;
+
+          return { ...item, percentCorrect: pValue, discrimination: dIndex, distractorEfficiency: deValue, flag };
         });
       }
     });
@@ -873,52 +907,70 @@ function MCQGrader({ t }) {
               <table className="w-full text-sm text-left">
                 <thead className="bg-white border-b border-gray-200 text-gray-600">
                   <tr>
-                    <th className="px-4 py-3 font-semibold w-16 text-center">{t('rep_q')}</th>
+                    <th className="px-4 py-3 font-semibold w-12 text-center">{t('rep_q')}</th>
                     <th className="px-4 py-3 font-semibold w-24 text-center">{t('rep_ans')}</th>
                     <th className="px-4 py-3 font-semibold w-32 text-center">{t('rep_rate')}</th>
                     <th className="px-4 py-3 font-semibold w-32 text-center">{t('rep_disc')}</th>
+                    <th className="px-4 py-3 font-semibold w-32 text-center">{t('rep_de')}</th>
                     <th className="px-4 py-3 font-semibold">{t('rep_analysis')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.itemStats.map((stat) => (
-                    <tr key={stat.questionIndex} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                      <td className="px-4 py-3 text-center font-medium text-gray-900">{stat.questionIndex}</td>
-                      <td className="px-4 py-3 text-center font-mono">{stat.expectedAnswer}</td>
-                      
-                      {/* Difficulty Index */}
-                      <td className="px-4 py-3 text-center">
-                        {stat.isVoid ? (
-                           <span className="font-bold text-gray-300">-</span>
-                        ) : (
-                           <span className={`font-bold ${stat.percentCorrect < 30 ? 'text-red-600' : stat.percentCorrect > 80 ? 'text-yellow-600' : 'text-gray-700'}`}>
-                             {data.totalStudents > 0 ? stat.percentCorrect : 0}%
-                           </span>
-                        )}
-                      </td>
+                  {data.itemStats.map((stat) => {
+                    // Create tooltip text showing distribution of answers
+                    const freqString = Object.entries(stat.answerFrequencies)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([ans, count]) => `${ans}: ${count}`)
+                      .join(' | ');
 
-                      {/* Discrimination Index */}
-                      <td className="px-4 py-3 text-center">
-                        {stat.discrimination !== null ? (
-                          <span className={`font-bold ${stat.discrimination < 0 ? 'text-red-600' : stat.discrimination > 0.25 ? 'text-green-600' : 'text-gray-500'}`}>
-                            {stat.discrimination > 0 ? '+' : ''}{stat.discrimination}
-                          </span>
-                        ) : <span className="font-bold text-gray-300">-</span>}
-                      </td>
-
-                      {/* The Matrix Verdict */}
-                      <td className="px-4 py-3">
-                        {stat.flag === 'VOID' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 text-gray-600 border border-gray-300"><Slash className="w-3.5 h-3.5" /> {t('rep_void_badge')}</span>}
-                        {stat.flag === 'TOXIC' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-red-100 text-red-800 border border-red-200"><AlertCircle className="w-3.5 h-3.5" /> {t('rep_toxic')}</span>}
-                        {stat.flag === 'ELITE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200"><Award className="w-3.5 h-3.5" /> {t('rep_elite')}</span>}
-                        {stat.flag === 'WORKHORSE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-green-100 text-green-800 border border-green-200"><Check className="w-3.5 h-3.5" /> {t('rep_workhorse')}</span>}
-                        {stat.flag === 'FREEBIE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-200"><Activity className="w-3.5 h-3.5" /> {t('rep_freebie')}</span>}
+                    return (
+                      <tr key={stat.questionIndex} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                        <td className="px-4 py-3 text-center font-medium text-gray-900">{stat.questionIndex}</td>
+                        <td className="px-4 py-3 text-center font-mono">{stat.expectedAnswer}</td>
                         
-                        {!['VOID', 'TOXIC', 'ELITE', 'WORKHORSE', 'FREEBIE'].includes(stat.flag) && data.totalStudents >= 3 && <span className="text-xs text-gray-500">{t('rep_std')}</span>}
-                        {data.totalStudents > 0 && data.totalStudents < 3 && !stat.isVoid && <span className="text-xs text-gray-400">{t('rep_nodata')}</span>}
-                      </td>
-                    </tr>
-                  ))}
+                        {/* Difficulty Index */}
+                        <td className="px-4 py-3 text-center">
+                          {stat.isVoid ? (
+                             <span className="font-bold text-gray-300">-</span>
+                          ) : (
+                             <span className={`font-bold ${stat.percentCorrect < 30 ? 'text-red-600' : stat.percentCorrect > 80 ? 'text-yellow-600' : 'text-gray-700'}`}>
+                               {data.totalStudents > 0 ? stat.percentCorrect : 0}%
+                             </span>
+                          )}
+                        </td>
+
+                        {/* Discrimination Index */}
+                        <td className="px-4 py-3 text-center">
+                          {stat.discrimination !== null ? (
+                            <span className={`font-bold ${stat.discrimination < 0 ? 'text-red-600' : stat.discrimination > 0.25 ? 'text-green-600' : 'text-gray-500'}`}>
+                              {stat.discrimination > 0 ? '+' : ''}{stat.discrimination}
+                            </span>
+                          ) : <span className="font-bold text-gray-300">-</span>}
+                        </td>
+
+                        {/* Distractor Efficiency (DE) */}
+                        <td className="px-4 py-3 text-center cursor-help" title={`Answers chosen: ${freqString || 'None'}`}>
+                          {stat.distractorEfficiency !== null ? (
+                            <span className={`font-bold border-b border-dashed border-gray-300 pb-0.5 ${stat.distractorEfficiency === 0 ? 'text-red-600' : stat.distractorEfficiency >= 66 ? 'text-green-600' : 'text-yellow-600'}`}>
+                              {stat.distractorEfficiency}%
+                            </span>
+                          ) : <span className="font-bold text-gray-300">-</span>}
+                        </td>
+
+                        {/* The Matrix Verdict */}
+                        <td className="px-4 py-3">
+                          {stat.flag === 'VOID' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 text-gray-600 border border-gray-300"><Slash className="w-3.5 h-3.5" /> {t('rep_void_badge')}</span>}
+                          {stat.flag === 'TOXIC' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-red-100 text-red-800 border border-red-200"><AlertCircle className="w-3.5 h-3.5" /> {t('rep_toxic')}</span>}
+                          {stat.flag === 'ELITE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200"><Award className="w-3.5 h-3.5" /> {t('rep_elite')}</span>}
+                          {stat.flag === 'WORKHORSE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-green-100 text-green-800 border border-green-200"><Check className="w-3.5 h-3.5" /> {t('rep_workhorse')}</span>}
+                          {stat.flag === 'FREEBIE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-200"><Activity className="w-3.5 h-3.5" /> {t('rep_freebie')}</span>}
+                          
+                          {!['VOID', 'TOXIC', 'ELITE', 'WORKHORSE', 'FREEBIE'].includes(stat.flag) && data.totalStudents >= 3 && <span className="text-xs text-gray-500">{t('rep_std')}</span>}
+                          {data.totalStudents > 0 && data.totalStudents < 3 && !stat.isVoid && <span className="text-xs text-gray-400">{t('rep_nodata')}</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
