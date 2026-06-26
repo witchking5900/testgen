@@ -38,11 +38,8 @@ const TRANSLATIONS = {
     sheet_subtitle: "Auto-optimized for A4 paper efficiency.",
     sheet_total: "Total Questions",
     sheet_choices: "Choices per Q",
-    sheet_cols: "Columns",
-    sheet_col_1: "1 Column",
-    sheet_col_2: "2 Columns",
-    sheet_col_3: "3 Columns",
-    sheet_col_4: "4 Columns",
+    sheet_q_cols: "Question Cols",
+    sheet_page_grid: "Page Grid",
     sheet_fitting: "Fitting",
     sheet_tickets: "tickets",
     sheet_btn_copy: "Copy",
@@ -122,11 +119,8 @@ const TRANSLATIONS = {
     sheet_subtitle: "ავტომატურად ოპტიმიზირებული A4 ფორმატისთვის.",
     sheet_total: "სულ კითხვა",
     sheet_choices: "პასუხი კითხვაზე",
-    sheet_cols: "სვეტები",
-    sheet_col_1: "1 სვეტი",
-    sheet_col_2: "2 სვეტი",
-    sheet_col_3: "3 სვეტი",
-    sheet_col_4: "4 სვეტი",
+    sheet_q_cols: "კითხვების სვეტები",
+    sheet_page_grid: "გვერდის ბადე",
     sheet_fitting: "ეტევა",
     sheet_tickets: "ბილეთი",
     sheet_btn_copy: "კოპირება",
@@ -538,48 +532,69 @@ function TestGenerator({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR (UPDATED FOR SPACING) ---
+// --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR (UPDATED FOR DYNAMIC FIT) ---
 function AnswerSheetConstructor({ t }) {
-  const [numQuestions, setNumQuestions] = useState(20);
+  const [numQuestions, setNumQuestions] = useState(30);
   const [numChoices, setNumChoices] = useState(4);
-  const [columns, setColumns] = useState(2);
+  const [ticketsPerRow, setTicketsPerRow] = useState(2);
+  const [rowsPerPage, setRowsPerPage] = useState(5);
+  const [internalCols, setInternalCols] = useState(2);
   const sheetRef = useRef(null);
 
   const choices = Array.from({ length: numChoices }, (_, i) => String.fromCharCode(97 + i));
 
+  // Pure Math Top-Down Auto-Fit Calculation
   const layout = useMemo(() => {
-    const PAGE_W = 210 - 10; 
-    const PAGE_H = 297 - 10; 
-    const HEADER_H = 22; 
-    const ROW_H = 5.2; 
-    const TICKET_PAD = 4; 
-    const NUM_W = 8; 
-    const CHOICE_W = 7; 
-    const COL_GAP = 3; 
-
-    const intCols = columns;
-    const rowsPerCol = Math.ceil(numQuestions / intCols);
+    // Standard A4 dimensions
+    const PAGE_H_MM = 297;
+    const PAGE_PAD_MM = 10; // 5mm top + 5mm bottom
+    const USABLE_H_MM = PAGE_H_MM - PAGE_PAD_MM;
     
-    const ticketW = (intCols * (NUM_W + (numChoices * CHOICE_W))) + ((intCols - 1) * COL_GAP) + TICKET_PAD;
-    const ticketH = HEADER_H + (rowsPerCol * ROW_H) + TICKET_PAD;
+    // Distribute exact height to each row of tickets in the CSS grid
+    const TICKET_H_MM = USABLE_H_MM / rowsPerPage;
 
-    const fitsX = Math.max(1, Math.floor(PAGE_W / ticketW));
-    const fitsY = Math.max(1, Math.floor(PAGE_H / ticketH));
-    const total = fitsX * fitsY;
+    // Estimate vertical space taken by headers and internal padding inside the ticket
+    // ~6mm for the name/group header, ~4mm for borders/padding
+    const HEADER_AND_PADDING_MM = 10; 
+    const TABLE_H_MM = TICKET_H_MM - HEADER_AND_PADDING_MM;
 
-    return { ticketsPerSheet: total, rows: fitsY, cols: fitsX, internalCols: intCols };
-  }, [numQuestions, numChoices, columns]);
+    // Calculate how many rows the table will need
+    const questionsPerCol = Math.ceil(numQuestions / internalCols);
+    const totalTableRows = questionsPerCol + 1; // +1 for the A B C D header
 
+    // Find the absolute maximum height available for a single row
+    const rowHeightMm = TABLE_H_MM / totalTableRows;
+
+    // Convert to px (1mm = 3.78px). 
+    // We use 85% of the row height for the font size to prevent overlapping borders.
+    let calcFontPx = (rowHeightMm * 0.85) * 3.78;
+
+    // Apply safety limits for legibility
+    if (calcFontPx > 14) calcFontPx = 14;
+    if (calcFontPx < 6) calcFontPx = 6; 
+
+    return {
+      ticketsPerSheet: ticketsPerRow * rowsPerPage,
+      gridCols: ticketsPerRow,
+      gridRows: rowsPerPage,
+      fontSizePx: calcFontPx,
+      questionsPerCol: questionsPerCol
+    };
+  }, [numQuestions, rowsPerPage, ticketsPerRow, internalCols]);
+
+  // Construct table data strictly so every column has the exact same number of rows
+  // This ensures flexbox height stretches evenly across all columns
   const internalColumnData = useMemo(() => {
-    const questionsPerColumn = Math.ceil(numQuestions / layout.internalCols);
-    return Array.from({ length: layout.internalCols }, (_, colIndex) => {
-      const start = colIndex * questionsPerColumn + 1;
-      const end = Math.min((colIndex + 1) * questionsPerColumn, numQuestions);
+    return Array.from({ length: internalCols }, (_, colIndex) => {
       const numbers = [];
-      for (let i = start; i <= end; i++) numbers.push(i);
+      for (let i = 0; i < layout.questionsPerCol; i++) {
+        const qNum = (colIndex * layout.questionsPerCol) + i + 1;
+        // Push null if this slot is empty (e.g. 20 questions in 3 cols = empty slots at the end)
+        numbers.push(qNum <= numQuestions ? qNum : null); 
+      }
       return numbers;
     });
-  }, [numQuestions, layout.internalCols]);
+  }, [numQuestions, internalCols, layout.questionsPerCol]);
 
   const copyForGoogleDocs = () => {
     if (!sheetRef.current) return;
@@ -592,42 +607,61 @@ function AnswerSheetConstructor({ t }) {
     selection?.removeAllRanges();
   };
 
-  const ticketStyle = { fontSize: '11px', headerPadding: '1px 4px', cellPadding: '1px', numWidth: '15px', choiceWidth: '14px', border: '1px dashed #ccc', margin: '2px' };
-
   const Ticket = () => (
-    <div style={{ border: ticketStyle.border, padding: '5px', boxSizing: 'border-box', height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      <table style={{ width: '100%', marginBottom: '4px', borderCollapse: 'collapse', fontFamily: 'serif', fontSize: ticketStyle.fontSize }}>
-        <tbody>
-          <tr>
-            <td style={{ padding: ticketStyle.headerPadding, width: '70%' }}><strong>{t('sheet_student')}</strong> ______________________</td>
-            <td style={{ padding: ticketStyle.headerPadding, width: '30%' }}><strong>{t('sheet_group')}</strong> ________</td>
-          </tr>
-        </tbody>
-      </table>
-      <div style={{ flex: 1, display: 'flex' }}>
+    <div style={{ 
+      border: '1px dashed #999', 
+      padding: '2mm', 
+      boxSizing: 'border-box', 
+      display: 'flex', 
+      flexDirection: 'column',
+      width: '100%',
+      height: '100%',
+      overflow: 'hidden'
+    }}>
+      {/* Header Area */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        fontSize: `${Math.max(10, layout.fontSizePx)}px`, 
+        marginBottom: '2mm', 
+        fontWeight: 'bold', 
+        fontFamily: 'serif' 
+      }}>
+        <span>{t('sheet_student')} ______________________</span>
+        <span>{t('sheet_group')} _________</span>
+      </div>
+
+      {/* Answer Tables Area (Dynamically Stretches) */}
+      <div style={{ flex: 1, display: 'flex', gap: '2mm', minHeight: 0 }}>
         {internalColumnData.map((nums, colIdx) => (
-          <div key={colIdx} style={{ flex: 1, padding: '0 2px', borderRight: colIdx < layout.internalCols - 1 ? '1px dashed #ccc' : 'none', display: 'flex', flexDirection: 'column' }}>
-            {/* Added height: 100% to table to force it to stretch into the blank space */}
-            <table style={{ width: '100%', height: '100%', borderCollapse: 'collapse', fontSize: ticketStyle.fontSize, fontFamily: 'serif' }}>
-              <thead>
-                {/* Added height: 1px to the header so only the question rows stretch, not the header */}
-                <tr style={{ backgroundColor: '#222', color: 'white', height: '1px' }}>
-                  <th style={{ border: '1px solid #000', padding: ticketStyle.cellPadding, textAlign: 'center', width: ticketStyle.numWidth }}>#</th>
-                  <th style={{ border: '1px solid #000', padding: ticketStyle.cellPadding, textAlign: 'center' }} colSpan={numChoices}>{t('sheet_ans')}</th>
+          <table key={colIdx} style={{ 
+            flex: 1, 
+            height: '100%', 
+            borderCollapse: 'collapse', 
+            fontSize: `${layout.fontSizePx}px`, 
+            fontFamily: 'serif' 
+          }}>
+            <thead>
+              <tr style={{ backgroundColor: '#222', color: 'white', height: '1px' }}>
+                <th style={{ border: '1px solid #000', padding: 0, width: '15%' }}>#</th>
+                <th style={{ border: '1px solid #000', padding: 0 }} colSpan={numChoices}>{t('sheet_ans')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {nums.map((num, i) => (
+                <tr key={i}>
+                  <td style={{ border: '1px solid #000', textAlign: 'center', fontWeight: 'bold', padding: 0 }}>
+                    {num ? `${num}.` : ''}
+                  </td>
+                  {choices.map(choice => (
+                    <td key={choice} style={{ border: '1px solid #000', textAlign: 'center', padding: 0 }}>
+                      {num ? choice : ''}
+                    </td>
+                  ))}
                 </tr>
-              </thead>
-              <tbody>
-                {nums.map(num => (
-                  <tr key={num}>
-                    <td style={{ border: '1px solid #000', padding: ticketStyle.cellPadding, fontWeight: 'bold', textAlign: 'center' }}>{num}.</td>
-                    {choices.map(choice => (
-                      <td key={choice} style={{ border: '1px solid #000', padding: ticketStyle.cellPadding, textAlign: 'center', width: ticketStyle.choiceWidth }}>{choice}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         ))}
       </div>
     </div>
@@ -635,60 +669,69 @@ function AnswerSheetConstructor({ t }) {
 
   return (
     <div className="space-y-8">
+      {/* Print CSS resets browser margins and forces exact A4 size rendering */}
       <style>{`@media print { @page { size: A4; margin: 0mm; } body { visibility: hidden; } #answer-sheet-container { visibility: visible !important; position: fixed; left: 0; top: 0; width: 210mm; height: 297mm; margin: 0; padding: 5mm; background: white; z-index: 9999; } #answer-sheet-container * { visibility: visible !important; } .print\\:hidden { display: none !important; } }`}</style>
+      
       <div className="text-center space-y-2 print:hidden">
         <h1 className="text-3xl font-bold text-gray-900">{t('sheet_title')}</h1>
         <p className="text-gray-500">{t('sheet_subtitle')}</p>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-wrap gap-6 items-end justify-center print:hidden">
+      {/* Configuration Controls */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-wrap gap-4 items-end justify-center print:hidden">
         <div className="space-y-1">
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_total')}</label>
-          <input type="number" min="1" max="200" value={numQuestions} onChange={(e) => setNumQuestions(Number(e.target.value))} className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
+          <input type="number" min="1" max="200" value={numQuestions} onChange={(e) => setNumQuestions(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
         </div>
         <div className="space-y-1">
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_choices')}</label>
-          <select value={numChoices} onChange={(e) => setNumChoices(Number(e.target.value))} className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+          <select value={numChoices} onChange={(e) => setNumChoices(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
             <option value={3}>3 (a-c)</option><option value={4}>4 (a-d)</option><option value={5}>5 (a-e)</option><option value={6}>6 (a-f)</option>
           </select>
         </div>
         <div className="space-y-1">
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_cols')}</label>
-          <select value={columns} onChange={(e) => setColumns(Number(e.target.value))} className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
-            <option value={1}>{t('sheet_col_1')}</option><option value={2}>{t('sheet_col_2')}</option><option value={3}>{t('sheet_col_3')}</option><option value={4}>{t('sheet_col_4')}</option>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_q_cols')}</label>
+          <select value={internalCols} onChange={(e) => setInternalCols(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+            <option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option>
           </select>
         </div>
-        <div className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
-          <Settings className="w-4 h-4" />
-          <span>{t('sheet_fitting')} {layout.ticketsPerSheet} {t('sheet_tickets')} ({layout.rows}x{layout.cols})</span>
+        <div className="space-y-1">
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_page_grid')}</label>
+          <select value={`${ticketsPerRow}x${rowsPerPage}`} onChange={(e) => {
+            const [c, r] = e.target.value.split('x').map(Number);
+            setTicketsPerRow(c);
+            setRowsPerPage(r);
+          }} className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-indigo-700 bg-indigo-50">
+            <option value="1x2">1 x 2</option>
+            <option value="1x3">1 x 3</option>
+            <option value="2x3">2 x 3</option>
+            <option value="2x4">2 x 4</option>
+            <option value="2x5">2 x 5 (10)</option>
+            <option value="3x5">3 x 5 (15)</option>
+          </select>
         </div>
-        <div className="flex gap-2">
-          <button onClick={copyForGoogleDocs} className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition-colors flex items-center gap-2"><Copy className="w-4 h-4" /> {t('sheet_btn_copy')}</button>
+
+        <div className="flex gap-2 ml-auto">
+          <button onClick={copyForGoogleDocs} className="bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"><Copy className="w-4 h-4" /> {t('sheet_btn_copy')}</button>
           <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-gray-800 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-gray-900 transition-colors flex items-center gap-2"><Printer className="w-4 h-4" /> {t('sheet_btn_print')}</button>
         </div>
       </div>
 
+      {/* Render Output Wrapper */}
       <div className="flex justify-center bg-gray-200 p-8 overflow-auto print:bg-white print:p-0">
-        <div id="answer-sheet-container" ref={sheetRef} className="bg-white shadow-2xl mx-auto text-black" style={{ width: '210mm', minHeight: '297mm', boxSizing: 'border-box', padding: '5mm', display: 'block' }}>
-          <table style={{ width: '100%', height: '100%', borderCollapse: 'collapse', border: 'none' }}>
-            <tbody>
-              {Array.from({ length: layout.rows }).map((_, rowIdx) => (
-                <tr key={rowIdx}>
-                  {Array.from({ length: layout.cols }).map((_, colIdx) => {
-                    const ticketIndex = rowIdx * layout.cols + colIdx;
-                    return (
-                      <td key={colIdx} style={{ width: `${100 / layout.cols}%`, height: `${100 / layout.rows}%`, padding: '2mm', verticalAlign: 'top' }}>
-                        {ticketIndex < layout.ticketsPerSheet && <Ticket />}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={{ position: 'absolute', bottom: '2mm', width: '100%', textAlign: 'center', color: '#ccc', fontSize: '8px' }}>
-            {layout.ticketsPerSheet} Tickets on A4 | 11px font | {numQuestions} Questions
-          </div>
+        <div id="answer-sheet-container" ref={sheetRef} className="bg-white shadow-2xl mx-auto text-black" style={{ 
+          width: '210mm', 
+          height: '297mm', // Strict A4 Height
+          boxSizing: 'border-box', 
+          padding: '5mm', 
+          display: 'grid',
+          gridTemplateColumns: `repeat(${layout.gridCols}, 1fr)`,
+          gridTemplateRows: `repeat(${layout.gridRows}, 1fr)`,
+          gap: '2mm'
+        }}>
+          {Array.from({ length: layout.ticketsPerSheet }).map((_, i) => (
+            <Ticket key={i} />
+          ))}
         </div>
       </div>
     </div>
@@ -824,7 +867,10 @@ function MCQGrader({ t }) {
       // Determine the maximum choice letter used in this version (Assume at least A-D)
       const allChars = new Set();
       parsedKeys[version].split('').forEach(c => { if(/^[A-Z]$/.test(c) && c !== 'V') allChars.add(c); });
-      studentsForVersion.forEach(s => s.answers.split('').forEach(c => { if(/^[A-Z]$/.test(c) && c !== 'X') allChars.add(c); }));
+      
+      // FIXED LINE: Now correctly ignores 'X' AND 'V' from student submissions
+      studentsForVersion.forEach(s => s.answers.split('').forEach(c => { if(/^[A-Z]$/.test(c) && c !== 'X' && c !== 'V') allChars.add(c); }));
+      
       const maxCharCode = Array.from(allChars).reduce((max, char) => Math.max(max, char.charCodeAt(0)), 68); // 68 is 'D'
       const expectedOptionsCount = maxCharCode - 64; // e.g., 'D' -> 4 options, 'E' -> 5
 
