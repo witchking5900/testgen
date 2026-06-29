@@ -47,6 +47,8 @@ const TRANSLATIONS = {
     sheet_student: "Student:",
     sheet_group: "Group:",
     sheet_ans: "answer",
+    sheet_recommended: "⭐ Rec.",
+    sheet_font: "Font",
     
     // Grader & Analytics
     grad_title: "MCQ Grader & Analytics",
@@ -128,6 +130,8 @@ const TRANSLATIONS = {
     sheet_student: "სტუდენტი:",
     sheet_group: "ჯგუფი:",
     sheet_ans: "პასუხი",
+    sheet_recommended: "⭐ რეკომენდ.",
+    sheet_font: "ფონტი",
     
     // Grader & Analytics
     grad_title: "MCQ შემფასებელი და ანალიტიკა",
@@ -532,38 +536,68 @@ function TestGenerator({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR (FIXED CLIPPING) ---
+// --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR (UPDATED FOR DYNAMIC RECOMMENDATIONS) ---
 function AnswerSheetConstructor({ t }) {
   const [numQuestions, setNumQuestions] = useState(30);
   const [numChoices, setNumChoices] = useState(4);
+  const [internalCols, setInternalCols] = useState(2);
   const [ticketsPerRow, setTicketsPerRow] = useState(2);
   const [rowsPerPage, setRowsPerPage] = useState(5);
-  const [internalCols, setInternalCols] = useState(2);
   const sheetRef = useRef(null);
 
   const choices = Array.from({ length: numChoices }, (_, i) => String.fromCharCode(97 + i));
 
-  // Pure Math Top-Down Auto-Fit Calculation
+  // Determine the optimal grid size where font stays at least 10px
+  const recommendations = useMemo(() => {
+    const USABLE_W_MM = 200; // 210mm (A4 width) - 10mm padding
+    const USABLE_H_MM = 287; // 297mm (A4 height) - 10mm padding
+    
+    const NUM_W = 8; 
+    const CHOICE_W = 7; 
+    const COL_GAP = 3; 
+    const TICKET_PAD = 4;
+    const HEADER_AND_PADDING_MM = 12; // Safety margin for header text and table borders
+
+    // 1. Calculate how many columns of tickets fit horizontally
+    const ticketW = (internalCols * (NUM_W + (numChoices * CHOICE_W))) + ((internalCols - 1) * COL_GAP) + TICKET_PAD;
+    const recCols = Math.max(1, Math.floor(USABLE_W_MM / ticketW));
+
+    // 2. Calculate the minimum height a ticket needs to maintain a 10px font
+    const questionsPerCol = Math.ceil(numQuestions / internalCols);
+    const totalTableRows = questionsPerCol + 1; // +1 for the A B C D header
+    
+    // Reverse engineering the font scaling: calcFontPx = (rowHeightMm * 0.70) * 3.78
+    // So to get 10px: rowHeightMm = 10 / (0.70 * 3.78)
+    const minRowHeightMm = 10 / (0.70 * 3.78);
+    const minTicketH = (minRowHeightMm * totalTableRows) + HEADER_AND_PADDING_MM;
+    
+    // 3. Calculate how many of these minimum-height tickets fit vertically
+    const recRows = Math.max(1, Math.floor(USABLE_H_MM / minTicketH));
+
+    return { recCols, recRows };
+  }, [numQuestions, numChoices, internalCols]);
+
+  // Automatically apply the recommendation when the primary parameters change
+  useEffect(() => {
+    setTicketsPerRow(recommendations.recCols);
+    setRowsPerPage(recommendations.recRows);
+  }, [recommendations.recCols, recommendations.recRows]);
+
+  // Calculate the final layout and actual font size based on current selection
   const layout = useMemo(() => {
     const PAGE_H_MM = 297;
-    const PAGE_PAD_MM = 10; // 5mm top + 5mm bottom padding
+    const PAGE_PAD_MM = 10;
     const USABLE_H_MM = PAGE_H_MM - PAGE_PAD_MM;
     
-    // Distribute exact height to each row of tickets in the CSS grid
     const TICKET_H_MM = USABLE_H_MM / rowsPerPage;
-
-    // We increase this safety margin to 12mm to account for 1px table borders adding up
     const HEADER_AND_PADDING_MM = 12; 
     const TABLE_H_MM = TICKET_H_MM - HEADER_AND_PADDING_MM;
 
     const questionsPerCol = Math.ceil(numQuestions / internalCols);
-    const totalTableRows = questionsPerCol + 1; // +1 for the A B C D header
-
+    const totalTableRows = questionsPerCol + 1;
     const rowHeightMm = TABLE_H_MM / totalTableRows;
 
-    // Multiplier reduced from 0.85 to 0.70 to guarantee text + line-height fits inside borders
     let calcFontPx = (rowHeightMm * 0.70) * 3.78;
-
     if (calcFontPx > 14) calcFontPx = 14;
     if (calcFontPx < 5) calcFontPx = 5; 
 
@@ -628,7 +662,7 @@ function AnswerSheetConstructor({ t }) {
             height: '100%', 
             borderCollapse: 'collapse', 
             fontSize: `${layout.fontSizePx}px`, 
-            lineHeight: '1.15', // Force browser to not add huge invisible padding around letters
+            lineHeight: '1.15', 
             fontFamily: 'serif' 
           }}>
             <thead>
@@ -685,17 +719,27 @@ function AnswerSheetConstructor({ t }) {
         </div>
         <div className="space-y-1">
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_page_grid')}</label>
-          <select value={`${ticketsPerRow}x${rowsPerPage}`} onChange={(e) => {
-            const [c, r] = e.target.value.split('x').map(Number);
-            setTicketsPerRow(c);
-            setRowsPerPage(r);
-          }} className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-indigo-700 bg-indigo-50">
-            <option value="1x2">1 x 2</option>
-            <option value="1x3">1 x 3</option>
-            <option value="2x3">2 x 3</option>
-            <option value="2x4">2 x 4</option>
-            <option value="2x5">2 x 5 (10)</option>
-            <option value="3x5">3 x 5 (15)</option>
+          <select 
+            value={`${ticketsPerRow}x${rowsPerPage}`} 
+            onChange={(e) => {
+              const [c, r] = e.target.value.split('x').map(Number);
+              setTicketsPerRow(c);
+              setRowsPerPage(r);
+            }} 
+            className="w-56 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-indigo-700 bg-indigo-50"
+          >
+            {Array.from({ length: Math.max(4, recommendations.recCols) }, (_, i) => i + 1).map(c => (
+              <optgroup key={c} label={`${c} Columns Wide`}>
+                {Array.from({ length: Math.max(10, recommendations.recRows + 2) }, (_, i) => i + 1).map(r => {
+                  const isRec = c === recommendations.recCols && r === recommendations.recRows;
+                  return (
+                    <option key={`${c}x${r}`} value={`${c}x${r}`}>
+                      {c} x {r} = {c * r} {t('sheet_tickets')} {isRec ? t('sheet_recommended') : ''}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            ))}
           </select>
         </div>
 
@@ -703,6 +747,14 @@ function AnswerSheetConstructor({ t }) {
           <button onClick={copyForGoogleDocs} className="bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"><Copy className="w-4 h-4" /> {t('sheet_btn_copy')}</button>
           <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-gray-800 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-gray-900 transition-colors flex items-center gap-2"><Printer className="w-4 h-4" /> {t('sheet_btn_print')}</button>
         </div>
+      </div>
+
+      {/* Info bar showing exactly what the text is doing */}
+      <div className="bg-indigo-50 text-indigo-700 px-4 py-3 rounded-xl text-sm font-medium flex justify-center items-center gap-3 print:hidden shadow-sm border border-indigo-100">
+        <Settings className="w-4 h-4" />
+        <span>{t('sheet_fitting')} {layout.ticketsPerSheet} {t('sheet_tickets')} ({layout.gridRows}x{layout.gridCols})</span>
+        <span className="opacity-50">•</span>
+        <span>{t('sheet_font')}: <span className={layout.fontSizePx < 10 ? "text-red-600 font-bold" : "text-green-700 font-bold"}>{layout.fontSizePx.toFixed(1)}px</span></span>
       </div>
 
       <div className="flex justify-center bg-gray-200 p-8 overflow-auto print:bg-white print:p-0">
@@ -724,6 +776,7 @@ function AnswerSheetConstructor({ t }) {
     </div>
   );
 }
+
 // --- SUB-COMPONENT 3: MCQ GRADER (UPDATED WITH DISTRACTOR EFFICIENCY) ---
 function MCQGrader({ t }) {
   const [keysInput, setKeysInput] = useState('');
@@ -853,10 +906,7 @@ function MCQGrader({ t }) {
       // Determine the maximum choice letter used in this version (Assume at least A-D)
       const allChars = new Set();
       parsedKeys[version].split('').forEach(c => { if(/^[A-Z]$/.test(c) && c !== 'V') allChars.add(c); });
-      
-      // FIXED LINE: Now correctly ignores 'X' AND 'V' from student submissions
       studentsForVersion.forEach(s => s.answers.split('').forEach(c => { if(/^[A-Z]$/.test(c) && c !== 'X' && c !== 'V') allChars.add(c); }));
-      
       const maxCharCode = Array.from(allChars).reduce((max, char) => Math.max(max, char.charCodeAt(0)), 68); // 68 is 'D'
       const expectedOptionsCount = maxCharCode - 64; // e.g., 'D' -> 4 options, 'E' -> 5
 
