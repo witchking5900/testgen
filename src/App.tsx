@@ -532,7 +532,7 @@ function TestGenerator({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR (UPDATED FOR DYNAMIC FIT) ---
+// --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR (FIXED CLIPPING) ---
 function AnswerSheetConstructor({ t }) {
   const [numQuestions, setNumQuestions] = useState(30);
   const [numChoices, setNumChoices] = useState(4);
@@ -545,33 +545,27 @@ function AnswerSheetConstructor({ t }) {
 
   // Pure Math Top-Down Auto-Fit Calculation
   const layout = useMemo(() => {
-    // Standard A4 dimensions
     const PAGE_H_MM = 297;
-    const PAGE_PAD_MM = 10; // 5mm top + 5mm bottom
+    const PAGE_PAD_MM = 10; // 5mm top + 5mm bottom padding
     const USABLE_H_MM = PAGE_H_MM - PAGE_PAD_MM;
     
     // Distribute exact height to each row of tickets in the CSS grid
     const TICKET_H_MM = USABLE_H_MM / rowsPerPage;
 
-    // Estimate vertical space taken by headers and internal padding inside the ticket
-    // ~6mm for the name/group header, ~4mm for borders/padding
-    const HEADER_AND_PADDING_MM = 10; 
+    // We increase this safety margin to 12mm to account for 1px table borders adding up
+    const HEADER_AND_PADDING_MM = 12; 
     const TABLE_H_MM = TICKET_H_MM - HEADER_AND_PADDING_MM;
 
-    // Calculate how many rows the table will need
     const questionsPerCol = Math.ceil(numQuestions / internalCols);
     const totalTableRows = questionsPerCol + 1; // +1 for the A B C D header
 
-    // Find the absolute maximum height available for a single row
     const rowHeightMm = TABLE_H_MM / totalTableRows;
 
-    // Convert to px (1mm = 3.78px). 
-    // We use 85% of the row height for the font size to prevent overlapping borders.
-    let calcFontPx = (rowHeightMm * 0.85) * 3.78;
+    // Multiplier reduced from 0.85 to 0.70 to guarantee text + line-height fits inside borders
+    let calcFontPx = (rowHeightMm * 0.70) * 3.78;
 
-    // Apply safety limits for legibility
     if (calcFontPx > 14) calcFontPx = 14;
-    if (calcFontPx < 6) calcFontPx = 6; 
+    if (calcFontPx < 5) calcFontPx = 5; 
 
     return {
       ticketsPerSheet: ticketsPerRow * rowsPerPage,
@@ -582,14 +576,11 @@ function AnswerSheetConstructor({ t }) {
     };
   }, [numQuestions, rowsPerPage, ticketsPerRow, internalCols]);
 
-  // Construct table data strictly so every column has the exact same number of rows
-  // This ensures flexbox height stretches evenly across all columns
   const internalColumnData = useMemo(() => {
     return Array.from({ length: internalCols }, (_, colIndex) => {
       const numbers = [];
       for (let i = 0; i < layout.questionsPerCol; i++) {
         const qNum = (colIndex * layout.questionsPerCol) + i + 1;
-        // Push null if this slot is empty (e.g. 20 questions in 3 cols = empty slots at the end)
         numbers.push(qNum <= numQuestions ? qNum : null); 
       }
       return numbers;
@@ -618,7 +609,6 @@ function AnswerSheetConstructor({ t }) {
       height: '100%',
       overflow: 'hidden'
     }}>
-      {/* Header Area */}
       <div style={{ 
         display: 'flex', 
         justifyContent: 'space-between', 
@@ -631,7 +621,6 @@ function AnswerSheetConstructor({ t }) {
         <span>{t('sheet_group')} _________</span>
       </div>
 
-      {/* Answer Tables Area (Dynamically Stretches) */}
       <div style={{ flex: 1, display: 'flex', gap: '2mm', minHeight: 0 }}>
         {internalColumnData.map((nums, colIdx) => (
           <table key={colIdx} style={{ 
@@ -639,6 +628,7 @@ function AnswerSheetConstructor({ t }) {
             height: '100%', 
             borderCollapse: 'collapse', 
             fontSize: `${layout.fontSizePx}px`, 
+            lineHeight: '1.15', // Force browser to not add huge invisible padding around letters
             fontFamily: 'serif' 
           }}>
             <thead>
@@ -669,7 +659,6 @@ function AnswerSheetConstructor({ t }) {
 
   return (
     <div className="space-y-8">
-      {/* Print CSS resets browser margins and forces exact A4 size rendering */}
       <style>{`@media print { @page { size: A4; margin: 0mm; } body { visibility: hidden; } #answer-sheet-container { visibility: visible !important; position: fixed; left: 0; top: 0; width: 210mm; height: 297mm; margin: 0; padding: 5mm; background: white; z-index: 9999; } #answer-sheet-container * { visibility: visible !important; } .print\\:hidden { display: none !important; } }`}</style>
       
       <div className="text-center space-y-2 print:hidden">
@@ -677,7 +666,6 @@ function AnswerSheetConstructor({ t }) {
         <p className="text-gray-500">{t('sheet_subtitle')}</p>
       </div>
 
-      {/* Configuration Controls */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-wrap gap-4 items-end justify-center print:hidden">
         <div className="space-y-1">
           <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_total')}</label>
@@ -717,11 +705,10 @@ function AnswerSheetConstructor({ t }) {
         </div>
       </div>
 
-      {/* Render Output Wrapper */}
       <div className="flex justify-center bg-gray-200 p-8 overflow-auto print:bg-white print:p-0">
         <div id="answer-sheet-container" ref={sheetRef} className="bg-white shadow-2xl mx-auto text-black" style={{ 
           width: '210mm', 
-          height: '297mm', // Strict A4 Height
+          height: '297mm', 
           boxSizing: 'border-box', 
           padding: '5mm', 
           display: 'grid',
@@ -737,7 +724,6 @@ function AnswerSheetConstructor({ t }) {
     </div>
   );
 }
-
 // --- SUB-COMPONENT 3: MCQ GRADER (UPDATED WITH DISTRACTOR EFFICIENCY) ---
 function MCQGrader({ t }) {
   const [keysInput, setKeysInput] = useState('');
