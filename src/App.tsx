@@ -53,6 +53,8 @@ const TRANSLATIONS = {
     // Grader & Analytics
     grad_title: "MCQ Grader & Analytics",
     grad_subtitle: "Multi-version grading and item difficulty analysis.",
+    grad_neg_marking: "Negative Marking",
+    grad_penalty: "Penalty per wrong answer:",
     grad_report_btn: "View Statistical Report",
     grad_step1: "1. Answer Keys (Multi-Version)",
     grad_step2: "2. Student Responses",
@@ -85,6 +87,7 @@ const TRANSLATIONS = {
     rep_nodata: "Not enough data",
     rep_void_badge: "VOIDED - Excluded from stats",
     tooltip_void: "Voided: +1 Free Point",
+    tooltip_skipped: "Skipped (No Penalty)",
     tooltip_exp: "Exp:"
   },
   ka: {
@@ -136,6 +139,8 @@ const TRANSLATIONS = {
     // Grader & Analytics
     grad_title: "MCQ შემფასებელი და ანალიტიკა",
     grad_subtitle: "მრავალ-ვერსიიანი შეფასება და სირთულის ანალიზი.",
+    grad_neg_marking: "უარყოფითი შეფასება (Negative Marking)",
+    grad_penalty: "ჯარიმა არასწორ პასუხზე:",
     grad_report_btn: "სტატისტიკური რეპორტი",
     grad_step1: "1. პასუხების გასაღები (მრავალ-ვერსიიანი)",
     grad_step2: "2. სტუდენტების პასუხები",
@@ -168,6 +173,7 @@ const TRANSLATIONS = {
     rep_nodata: "არასაკმარისი მონაცემი",
     rep_void_badge: "გაუქმებულია - სტატისტიკის გარეშე",
     tooltip_void: "გაუქმებულია: +1 ქულა",
+    tooltip_skipped: "გამოტოვებულია (ჯარიმის გარეშე)",
     tooltip_exp: "სწორი:"
   }
 };
@@ -777,11 +783,15 @@ function AnswerSheetConstructor({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 3: MCQ GRADER (UPDATED WITH DISTRACTOR EFFICIENCY) ---
+// --- SUB-COMPONENT 3: MCQ GRADER (UPDATED WITH NEGATIVE MARKING) ---
 function MCQGrader({ t }) {
   const [keysInput, setKeysInput] = useState('');
   const [studentsInput, setStudentsInput] = useState('');
   const [showReport, setShowReport] = useState(false);
+  
+  // Negative Marking Settings
+  const [isNegativeMarking, setIsNegativeMarking] = useState(false);
+  const [penalty, setPenalty] = useState(0.33);
 
   // Psychometric Thresholds
   const DIFFICULTY_TOO_HARD = 30; 
@@ -830,24 +840,34 @@ function MCQGrader({ t }) {
           
           let isCorrect = false;
           let isVoid = keyChar === 'V';
+          let isSkipped = studentChar === '-' || studentChar === 'X';
 
           if (isVoid) {
             isCorrect = true; 
-            score++;
+            score += 1;
           } else if (keyChar === studentChar) {
             isCorrect = true;
-            score++;
+            score += 1;
           } else {
+            // Apply Negative Marking Penalty ONLY to incorrect guesses, not skipped questions
+            if (!isSkipped && isNegativeMarking) {
+              score -= parseFloat(penalty) || 0;
+            }
             wrongQuestionNumbers.push(i + 1);
           }
 
-          comparison.push({ index: i + 1, keyChar, studentChar, isCorrect, isVoid });
+          comparison.push({ index: i + 1, keyChar, studentChar, isCorrect, isVoid, isSkipped });
         }
 
-        const percentage = key.length > 0 ? Math.round((score / key.length) * 100) : 0;
+        // Clean up floating point math (e.g. 7.6700000001 -> 7.67)
+        score = Number(score.toFixed(2));
+        
+        // Percentages cannot be negative, cap at 0
+        const percentage = key.length > 0 ? Math.round(Math.max(0, (score / key.length) * 100)) : 0;
+        
         return { id: index, name, version, originalLine: line, answers, score, percentage, comparison, wrongQuestionNumbers, totalQuestions: key.length, error: null };
       });
-  }, [parsedKeys, studentsInput]);
+  }, [parsedKeys, studentsInput, isNegativeMarking, penalty]);
 
   const statistics = useMemo(() => {
     const validResults = gradingResults.filter(r => !r.error);
@@ -857,7 +877,7 @@ function MCQGrader({ t }) {
       statsByVersion[version] = { 
         totalStudents: 0, 
         averageScore: 0, 
-        highestScore: 0, 
+        highestScore: -999, // Start very low to account for negative scores
         itemStats: Array.from({ length: parsedKeys[version].length }, (_, i) => ({ 
           questionIndex: i + 1, 
           correctCount: 0, 
@@ -865,7 +885,7 @@ function MCQGrader({ t }) {
           discrimination: null,
           distractorEfficiency: null,
           isVoid: parsedKeys[version][i] === 'V',
-          answerFrequencies: {} // Track how many times each answer is picked
+          answerFrequencies: {} 
         })) 
       };
     });
@@ -883,7 +903,6 @@ function MCQGrader({ t }) {
           if (comp.isCorrect) {
             vStats.itemStats[idx].correctCount++; 
           }
-          // Record frequency of every chosen option (excluding blanks/voids)
           const chosen = comp.studentChar;
           if (/^[A-Z0-9]$/.test(chosen) && chosen !== 'X' && chosen !== 'V') {
             vStats.itemStats[idx].answerFrequencies[chosen] = (vStats.itemStats[idx].answerFrequencies[chosen] || 0) + 1;
@@ -892,9 +911,9 @@ function MCQGrader({ t }) {
       });
     });
 
-    // Calculate Difficulty, Discrimination, and DE
     Object.keys(statsByVersion).forEach(version => {
       const vStats = statsByVersion[version];
+      // Sorting inherently integrates Negative Marking penalties, accurately placing guessers at the bottom
       const studentsForVersion = validResults.filter(s => s.version === version).sort((a, b) => b.score - a.score);
       const n = studentsForVersion.length;
       
@@ -903,15 +922,14 @@ function MCQGrader({ t }) {
       const upperGroup = studentsForVersion.slice(0, groupSize);
       const lowerGroup = studentsForVersion.slice(n - groupSize);
 
-      // Determine the maximum choice letter used in this version (Assume at least A-D)
       const allChars = new Set();
       parsedKeys[version].split('').forEach(c => { if(/^[A-Z]$/.test(c) && c !== 'V') allChars.add(c); });
       studentsForVersion.forEach(s => s.answers.split('').forEach(c => { if(/^[A-Z]$/.test(c) && c !== 'X' && c !== 'V') allChars.add(c); }));
-      const maxCharCode = Array.from(allChars).reduce((max, char) => Math.max(max, char.charCodeAt(0)), 68); // 68 is 'D'
-      const expectedOptionsCount = maxCharCode - 64; // e.g., 'D' -> 4 options, 'E' -> 5
+      const maxCharCode = Array.from(allChars).reduce((max, char) => Math.max(max, char.charCodeAt(0)), 68); 
+      const expectedOptionsCount = maxCharCode - 64; 
 
       if (vStats.totalStudents > 0) {
-        vStats.averageScore = (vStats.averageScore / vStats.totalStudents).toFixed(1);
+        vStats.averageScore = (vStats.averageScore / vStats.totalStudents).toFixed(2);
         
         vStats.itemStats = vStats.itemStats.map((item, idx) => {
           if (item.isVoid) {
@@ -939,20 +957,15 @@ function MCQGrader({ t }) {
              if (pValue > DIFFICULTY_TOO_EASY) flag = 'FREEBIE';
           }
 
-          // Distractor Efficiency Calculation
           const totalDistractors = expectedOptionsCount - 1;
           let functionalDistractors = 0;
           
-          // Generate array of expected choices (e.g., ['A', 'B', 'C', 'D'])
           const choiceArray = Array.from({ length: expectedOptionsCount }, (_, i) => String.fromCharCode(65 + i));
           
           choiceArray.forEach(choice => {
              if (choice !== item.expectedAnswer) {
                  const count = item.answerFrequencies[choice] || 0;
-                 // A distractor is functional if > 0 students picked it
-                 if (count > 0) {
-                     functionalDistractors++;
-                 }
+                 if (count > 0) functionalDistractors++;
              }
           });
 
@@ -1001,7 +1014,6 @@ function MCQGrader({ t }) {
                 </thead>
                 <tbody>
                   {data.itemStats.map((stat) => {
-                    // Create tooltip text showing distribution of answers
                     const freqString = Object.entries(stat.answerFrequencies)
                       .sort(([a], [b]) => a.localeCompare(b))
                       .map(([ans, count]) => `${ans}: ${count}`)
@@ -1011,8 +1023,6 @@ function MCQGrader({ t }) {
                       <tr key={stat.questionIndex} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                         <td className="px-4 py-3 text-center font-medium text-gray-900">{stat.questionIndex}</td>
                         <td className="px-4 py-3 text-center font-mono">{stat.expectedAnswer}</td>
-                        
-                        {/* Difficulty Index */}
                         <td className="px-4 py-3 text-center">
                           {stat.isVoid ? (
                              <span className="font-bold text-gray-300">-</span>
@@ -1022,8 +1032,6 @@ function MCQGrader({ t }) {
                              </span>
                           )}
                         </td>
-
-                        {/* Discrimination Index */}
                         <td className="px-4 py-3 text-center">
                           {stat.discrimination !== null ? (
                             <span className={`font-bold ${stat.discrimination < 0 ? 'text-red-600' : stat.discrimination > 0.25 ? 'text-green-600' : 'text-gray-500'}`}>
@@ -1031,8 +1039,6 @@ function MCQGrader({ t }) {
                             </span>
                           ) : <span className="font-bold text-gray-300">-</span>}
                         </td>
-
-                        {/* Distractor Efficiency (DE) */}
                         <td className="px-4 py-3 text-center cursor-help" title={`Answers chosen: ${freqString || 'None'}`}>
                           {stat.distractorEfficiency !== null ? (
                             <span className={`font-bold border-b border-dashed border-gray-300 pb-0.5 ${stat.distractorEfficiency === 0 ? 'text-red-600' : stat.distractorEfficiency >= 66 ? 'text-green-600' : 'text-yellow-600'}`}>
@@ -1040,8 +1046,6 @@ function MCQGrader({ t }) {
                             </span>
                           ) : <span className="font-bold text-gray-300">-</span>}
                         </td>
-
-                        {/* The Matrix Verdict */}
                         <td className="px-4 py-3">
                           {stat.flag === 'VOID' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 text-gray-600 border border-gray-300"><Slash className="w-3.5 h-3.5" /> {t('rep_void_badge')}</span>}
                           {stat.flag === 'TOXIC' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-red-100 text-red-800 border border-red-200"><AlertCircle className="w-3.5 h-3.5" /> {t('rep_toxic')}</span>}
@@ -1071,7 +1075,33 @@ function MCQGrader({ t }) {
         <p className="text-gray-500">{t('grad_subtitle')}</p>
       </div>
 
-      <div className="flex justify-end border-b border-gray-200 pb-4">
+      <div className="flex justify-between items-center border-b border-gray-200 pb-4 flex-wrap gap-4">
+        {/* Negative Marking Control Panel */}
+        <div className="flex items-center gap-6 bg-white border border-gray-200 px-4 py-2 rounded-lg shadow-sm">
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ${isNegativeMarking ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+              <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${isNegativeMarking ? 'translate-x-4' : 'translate-x-0'}`} />
+            </div>
+            <input type="checkbox" checked={isNegativeMarking} onChange={() => setIsNegativeMarking(!isNegativeMarking)} className="hidden" />
+            <span className="text-sm font-semibold text-gray-700">{t('grad_neg_marking')}</span>
+          </label>
+          
+          {isNegativeMarking && (
+            <div className="flex items-center gap-2 border-l border-gray-200 pl-6">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('grad_penalty')}</label>
+              <input 
+                type="number" 
+                step="0.01" 
+                min="0" 
+                max="1" 
+                value={penalty} 
+                onChange={(e) => setPenalty(e.target.value)} 
+                className="w-20 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-indigo-700" 
+              />
+            </div>
+          )}
+        </div>
+
         {gradingResults.length > 0 && (
           <button onClick={() => setShowReport(true)} className="flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg font-medium hover:bg-indigo-100 transition-colors">
             <BarChart className="w-4 h-4" /> {t('grad_report_btn')}
@@ -1095,7 +1125,7 @@ function MCQGrader({ t }) {
               <button onClick={() => { setStudentsInput(''); setKeysInput(''); }} className="text-xs flex items-center gap-1 text-red-500 hover:text-red-700 transition-colors"><Trash2 className="w-3 h-3" /> {t('grad_clear')}</button>
             </div>
             <div className="flex-1 p-0 relative">
-              <textarea value={studentsInput} onChange={(e) => setStudentsInput(e.target.value)} placeholder={`John Smith A AAACBCAD\nJane Doe B BBBCBCAD`} className="w-full h-full p-4 font-mono text-sm resize-none focus:ring-0 border-none outline-none" spellCheck={false} />
+              <textarea value={studentsInput} onChange={(e) => setStudentsInput(e.target.value)} placeholder={`John Smith A AAACBCAD\nJane Doe B BBBCBCAD\n(Use '-' or 'X' for skipped questions)`} className="w-full h-full p-4 font-mono text-sm resize-none focus:ring-0 border-none outline-none" spellCheck={false} />
             </div>
           </div>
         </div>
@@ -1124,6 +1154,7 @@ function MCQGrader({ t }) {
                               <div className="text-xs text-gray-500 font-mono mt-1 tracking-wider opacity-70 truncate max-w-[200px]">{result.answers}</div>
                             </div>
                             <div className="text-right">
+                              {/* Display score allowing for 2 decimal places if negative marking is applied */}
                               <div className="text-2xl font-bold text-indigo-600">{result.score}<span className="text-sm text-gray-400 font-normal">/{result.totalQuestions}</span></div>
                               <div className={`text-xs font-semibold px-2 py-0.5 rounded-full inline-block mt-1 ${result.percentage >= 80 ? 'bg-green-100 text-green-700' : result.percentage >= 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{result.percentage}%</div>
                             </div>
@@ -1132,13 +1163,19 @@ function MCQGrader({ t }) {
                             {result.comparison.map((item, i) => (
                               <div key={i} className="flex flex-col items-center group relative">
                                 <div className={`w-6 h-8 flex items-center justify-center rounded text-xs font-bold select-none cursor-help 
-                                  ${item.isVoid ? 'bg-indigo-500 text-white' : item.isCorrect ? 'bg-green-500 text-white' : 'bg-red-500 text-white'} 
-                                  ${item.studentChar === '-' || item.studentChar === 'X' ? 'opacity-50' : ''}`}>
+                                  ${item.isVoid ? 'bg-indigo-500 text-white' : item.isSkipped ? 'bg-gray-200 text-gray-500' : item.isCorrect ? 'bg-green-500 text-white' : 'bg-red-500 text-white'} 
+                                  ${item.isSkipped ? 'border border-gray-300' : ''}`}>
                                   {item.studentChar}
                                 </div>
                                 
                                 <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none">
-                                  {item.isVoid ? t('tooltip_void') : !item.isCorrect ? `${t('tooltip_exp')} ${item.keyChar}` : ''}
+                                  {item.isVoid 
+                                    ? t('tooltip_void') 
+                                    : item.isSkipped 
+                                      ? t('tooltip_skipped')
+                                      : !item.isCorrect 
+                                        ? `${t('tooltip_exp')} ${item.keyChar} ${isNegativeMarking ? `(-${penalty})` : ''}` 
+                                        : ''}
                                 </div>
                               </div>
                             ))}
