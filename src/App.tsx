@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle, BarChart, Activity, Globe, Slash, Hash } from 'lucide-react';
+import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle, BarChart, Activity, Globe, Slash, Hash, BookOpen } from 'lucide-react';
 
 // --- TRANSLATION DICTIONARY ---
 const TRANSLATIONS = {
@@ -88,7 +88,62 @@ const TRANSLATIONS = {
     rep_void_badge: "VOIDED - Excluded from stats",
     tooltip_void: "Voided: +1 Free Point",
     tooltip_skipped: "Skipped (No Penalty)",
-    tooltip_exp: "Exp:"
+    tooltip_exp: "Exp:",
+    
+    // Official User Guide (English)
+    guide_title: "MCQ Grader & Analytics: Official User Guide",
+    guide_intro: "Welcome to the Advanced MCQ Grader. This tool goes beyond simply calculating raw scores; it performs automated psychometric item analysis to determine the actual quality, fairness, and reliability of your exam questions. Below are the formatting rules and explanations of the statistical metrics used to grade your exams.",
+    
+    g1_title: "1. Data Entry Rules & Notation",
+    g1_sub1: "Answer Keys Entry:",
+    g1_format1: "Format: [Version Name] [Answer String] (e.g., A ABCDDCBA)",
+    g1_v: "The 'V' Character (Voided Question): If a question was flawed, poorly printed, or you want to throw it out after the test was printed, type a V in the answer key instead of the correct letter.",
+    g1_rule1: "Rule: A voided question automatically grants 1 free point to every student, regardless of what they answered. It is completely removed from the statistical analysis (Difficulty, Discrimination, etc.) so it does not skew your exam's health metrics.",
+    g1_sub2: "Student Responses Entry:",
+    g1_format2: "Format: [Student First & Last Name] [Version] [Answer String] (e.g., John Doe A ABCDDCBA)",
+    g1_x: "The 'X' or '-' Character (Skipped Question): If a student leaves a question completely blank, enter an X or a hyphen (-).",
+    g1_rule2: "Rule: A skipped question awards 0 points. However, if Negative Marking is turned on, skipped questions are mathematically protected and do not receive a penalty deduction.",
+
+    g2_title: "2. Understanding the Psychometric Metrics",
+    g2_intro: "Once graded, the system analyzes every question based on Classical Test Theory (CTT). Here is how to interpret the numbers:",
+    g2_diff_title: "Difficulty Index (Success Rate)",
+    g2_diff_what: "What it is: The percentage of the total class that answered the question correctly.",
+    g2_diff_how: "How to read it:",
+    g2_diff_1: "< 30%: Very hard.",
+    g2_diff_2: "40% - 80%: The \"sweet spot\" for standard learning.",
+    g2_diff_3: "> 80%: Very easy.",
+
+    g2_disc_title: "Discrimination Index (D)",
+    g2_disc_what: "What it is: A measure of how well a question separates your top-performing students from your lowest-performing students. The system divides the class into the Top 33% and the Bottom 33% and compares their success rates on that specific question.",
+    g2_disc_how: "How to read it:",
+    g2_disc_1: "Positive (+) Score (0.25 to 1.0): Excellent. It means your smartest students got it right, and the students who failed the exam got it wrong. The question is testing true knowledge.",
+    g2_disc_2: "Zero (0.0): Neutral. Both top and bottom students answered it correctly at the same rate.",
+    g2_disc_3: "Negative (-) Score: Danger. A negative score means your worst students are guessing it right, while your best students are getting it wrong. This usually indicates a poorly worded trick question or a mistake in the answer key.",
+
+    g2_de_title: "Distractor Efficiency (DE)",
+    g2_de_what: "What it is: In a multiple-choice question, the wrong answers are called \"distractors.\" DE measures the percentage of your wrong answers that were actually chosen by at least one student.",
+    g2_de_why: "Why we need it: If you write a 4-choice question and one of the wrong options is so obviously incorrect that absolutely no one picks it, it is a \"dead\" option. Your 4-choice question has functionally become a 3-choice question, artificially raising the students' chances of guessing correctly.",
+    g2_de_how: "How to read it:",
+    g2_de_1: "100%: Perfect. Every wrong answer you wrote successfully tricked at least one unprepared student.",
+    g2_de_2: "66% or 33%: One or more of your wrong answers are too obvious. You should rewrite the unused options to make them more challenging next semester.",
+    g2_de_3: "0%: A total freebie. No one fell for any of your decoys.",
+    g2_de_note: "Note on Skipped Questions: A 0% Success Rate does not guarantee a 100% DE. If a question is so intimidating that students choose to skip it entirely, your decoys may go unselected. A skipped question protects the student from a guessing penalty, but it lowers the Distractor Efficiency of the question.",
+
+    g3_title: "3. Negative Marking (The Guessing Penalty)",
+    g3_intro: "If enabled, the system actively punishes blind guessing by deducting fractional points for incorrect answers.",
+    g3_why: "Why is the standard deduction 0.33?",
+    g3_why_text: "Negative marking is designed to make the statistical \"Expected Value\" of a completely blind guess exactly zero. If a student takes a 4-option multiple-choice question, they have a 1-in-4 (25%) chance of guessing right, and a 3-in-4 (75%) chance of guessing wrong. To neutralize the 1 point they get for a lucky guess, the penalty for the 3 wrong guesses must perfectly balance it out.",
+    g3_form: "The Formula: 1 / (Number of Options - 1)",
+    g3_form_1: "For 4 Choices (A, B, C, D): 1 / (4 - 1) = 1/3 = 0.33 deduction.",
+    g3_form_2: "For 5 Choices (A, B, C, D, E): 1 / (5 - 1) = 1/4 = 0.25 deduction.",
+    g3_note: "Note: Skipped questions ('X' or '-') receive 0 points but are completely exempt from the negative marking penalty.",
+
+    g4_title: "4. The Action Matrix Verdicts",
+    g4_intro: "To save you time, the system processes the Difficulty and Discrimination indices together to give you an immediate, actionable verdict for every question:",
+    g4_1: "Elite (Hard but Fair): Very low success rate, but highly positive discrimination. Keep it. It beautifully identifies your absolute best students.",
+    g4_2: "Workhorse (Good D): Balanced difficulty and strong positive discrimination. This is the backbone of a reliable exam. Keep it.",
+    g4_3: "Freebie (Too Easy): Nearly everyone got it right. Review it to ensure the distractors aren't too obvious.",
+    g4_4: "Toxic Trap (D < 0): Negative discrimination. Purge or drastically rewrite this question, as it is actively penalizing your most prepared students."
   },
   ka: {
     // Navigation
@@ -174,7 +229,62 @@ const TRANSLATIONS = {
     rep_void_badge: "გაუქმებულია - სტატისტიკის გარეშე",
     tooltip_void: "გაუქმებულია: +1 ქულა",
     tooltip_skipped: "გამოტოვებულია (ჯარიმის გარეშე)",
-    tooltip_exp: "სწორი:"
+    tooltip_exp: "სწორი:",
+
+    // Official User Guide (Georgian)
+    guide_title: "MCQ შემფასებელი და ანალიტიკა: ოფიციალური სახელმძღვანელო",
+    guide_intro: "კეთილი იყოს თქვენი მობრძანება Advanced MCQ Grader-ში. ეს ინსტრუმენტი არა მხოლოდ ითვლის ნედლ ქულებს, არამედ აკეთებს ავტომატიზირებულ ფსიქომეტრიულ ანალიზს ტესტის ხარისხის, სამართლიანობისა და საიმედოობის დასადგენად. ქვემოთ მოცემულია მონაცემთა შეყვანის წესები და სტატისტიკური მეტრიკების განმარტებები.",
+    
+    g1_title: "1. მონაცემთა შეყვანის წესები და აღნიშვნები",
+    g1_sub1: "პასუხების გასაღები (Answer Keys):",
+    g1_format1: "ფორმატი: [ვერსიის სახელი] [პასუხები] (მაგ., A ABCDDCBA)",
+    g1_v: "სიმბოლო 'V' (გაუქმებული კითხვა): თუ კითხვა იყო ხარვეზიანი და გსურთ მისი გაუქმება, სწორი პასუხის ნაცვლად ჩაწერეთ V.",
+    g1_rule1: "წესი: გაუქმებული კითხვა ავტომატურად ანიჭებს 1 უფასო ქულას ყველა სტუდენტს. ის სრულად ამოღებულია სტატისტიკური ანალიზიდან (სირთულე, დისკრიმინაცია), რათა არ დააზიანოს გამოცდის საერთო სურათი.",
+    g1_sub2: "სტუდენტების პასუხები:",
+    g1_format2: "ფორმატი: [სახელი და გვარი] [ვერსია] [პასუხები] (მაგ., John Doe A ABCDDCBA)",
+    g1_x: "სიმბოლო 'X' ან '-' (გამოტოვებული კითხვა): თუ სტუდენტმა კითხვა სრულად გამოტოვა, ჩაწერეთ X ან ტირე (-).",
+    g1_rule2: "წესი: გამოტოვებული კითხვა ფასდება 0 ქულით. თუმცა, თუ უარყოფითი შეფასება (Negative Marking) ჩართულია, გამოტოვებული კითხვები არ ჯარიმდება.",
+
+    g2_title: "2. ფსიქომეტრიული მეტრიკების განმარტება",
+    g2_intro: "სისტემა აანალიზებს კითხვებს კლასიკური ტესტის თეორიის (CTT) საფუძველზე. როგორ წავიკითხოთ მონაცემები:",
+    g2_diff_title: "სირთულის ინდექსი (წარმატების %)",
+    g2_diff_what: "რა არის ეს: სტუდენტების პროცენტული რაოდენობა, რომლებმაც კითხვას სწორად უპასუხეს.",
+    g2_diff_how: "როგორ წავიკითხოთ:",
+    g2_diff_1: "< 30%: ძალიან რთული.",
+    g2_diff_2: "40% - 80%: სტანდარტული \"ოქროს შუალედი\".",
+    g2_diff_3: "> 80%: ძალიან მარტივი.",
+
+    g2_disc_title: "დისკრიმინაციის ინდექსი (D)",
+    g2_disc_what: "რა არის ეს: ზომავს რამდენად კარგად მიჯნავს კითხვა ტოპ სტუდენტებს ყველაზე სუსტი სტუდენტებისგან (ადარებს ტოპ 33%-ის და ქვედა 33%-ის შედეგებს).",
+    g2_disc_how: "როგორ წავიკითხოთ:",
+    g2_disc_1: "დადებითი (+) (0.25 - 1.0): იდეალური. ჭკვიანმა სტუდენტებმა გამოიცნეს, სუსტებმა ვერა. კითხვა ზომავს ნამდვილ ცოდნას.",
+    g2_disc_2: "ნული (0.0): ნეიტრალური. ორივე ჯგუფმა თანაბრად კარგად (ან ცუდად) უპასუხა.",
+    g2_disc_3: "უარყოფითი (-): საფრთხე! სუსტები იცნობენ სწორ პასუხს, ძლიერები კი ცდებიან. ეს მიუთითებს ბუნდოვან/ეშმაკურ კითხვაზე ან შეცდომაზე გასაღებში.",
+
+    g2_de_title: "დისტრაქტორების ეფექტურობა (DE)",
+    g2_de_what: "რა არის ეს: მრავალპასუხიან კითხვაში მცდარ პასუხებს ეწოდება \"დისტრაქტორები\". DE ზომავს მცდარი პასუხების იმ პროცენტს, რომელიც მინიმუმ 1-მა სტუდენტმა მაინც აირჩია.",
+    g2_de_why: "რატომ გვჭირდება: თუ 4 პასუხიდან ერთ-ერთი იმდენად აბსურდულია, რომ მას არავინ ირჩევს, კითხვა რეალურად 3-პასუხიანი ხდება, რაც ზრდის ბრმად გამოცნობის შანსს.",
+    g2_de_how: "როგორ წავიკითხოთ:",
+    g2_de_1: "100%: იდეალური. ყველა მცდარმა ვარიანტმა წარმატებით დააბნია მოუმზადებელი სტუდენტი.",
+    g2_de_2: "66% ან 33%: ერთი ან ორი პასუხი ზედმეტად თვალსაჩინოა. უნდა შეცვალოთ აურჩეველი პასუხები შემდეგი გამოცდისთვის.",
+    g2_de_3: "0%: ზედმეტად მარტივი. არცერთი სტუდენტი არ მოტყუვდა მცდარი ვარიანტებით.",
+    g2_de_note: "შენიშვნა გამოტოვებულ კითხვებზე: 0% წარმატების მაჩვენებელი ყოველთვის არ იძლევა 100% DE-ს. თუ კითხვა ძალიან რთულია და სტუდენტები მას ტოვებენ, დისტრაქტორებიც აურჩეველი რჩება. გამოტოვებული კითხვა იცავს სტუდენტს ჯარიმისგან, მაგრამ ამცირებს კითხვის DE-ს.",
+
+    g3_title: "3. უარყოფითი შეფასება (Negative Marking)",
+    g3_intro: "ჩართვის შემთხვევაში, სისტემა აჯარიმებს სტუდენტს ბრმად გამოცნობილი პასუხებისთვის.",
+    g3_why: "რატომ არის სტანდარტული ჯარიმა 0.33?",
+    g3_why_text: "უარყოფითი შეფასების მიზანია ბრმად გამოცნობის სტატისტიკური ალბათობა გაუტოლდეს ნულს. 4-პასუხიან კითხვაში გამოცნობის შანსი 25%-ია, შეცდომის კი 75%. 1 სწორი გამოცნობით მიღებული ქულის გასანეიტრალებლად, 3-მა არასწორმა პასუხმა ჯამში უნდა გამოაკლოს 1 ქულა.",
+    g3_form: "ფორმულა: 1 / (პასუხების რაოდენობას - 1)",
+    g3_form_1: "4 პასუხისას (A, B, C, D): 1 / (4 - 1) = 1/3 = 0.33 ქულა.",
+    g3_form_2: "5 პასუხისას (A, B, C, D, E): 1 / (5 - 1) = 1/4 = 0.25 ქულა.",
+    g3_note: "შენიშვნა: გამოტოვებული კითხვები (X ან -) არ ჯარიმდება.",
+
+    g4_title: "4. მატრიცის ვერდიქტი (Action Matrix)",
+    g4_intro: "დროის დასაზოგად, სისტემა აანალიზებს სირთულესა და დისკრიმინაციას და გაძლევთ მზა ვერდიქტს თითოეულ კითხვაზე:",
+    g4_1: "ელიტური (Elite): ძალიან დაბალი წარმატების %, მაგრამ მაღალი დისკრიმინაცია. დატოვეთ. იდეალურად ავლენს საუკეთესო სტუდენტებს.",
+    g4_2: "იდეალური (Workhorse): ბალანსირებული სირთულე და კარგი დისკრიმინაცია. საიმედო გამოცდის ხერხემალია. დატოვეთ.",
+    g4_3: "მარტივი (Freebie): თითქმის ყველამ უპასუხა. გადახედეთ მცდარ პასუხებს (დისტრაქტორებს).",
+    g4_4: "ტოქსიკური (Toxic Trap): უარყოფითი დისკრიმინაცია. წაშალეთ ან თავიდან დაწერეთ - ის პირდაპირ აზარალებს კარგად მომზადებულ სტუდენტებს."
   }
 };
 
@@ -542,7 +652,7 @@ function TestGenerator({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR (UPDATED FOR DYNAMIC RECOMMENDATIONS) ---
+// --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR ---
 function AnswerSheetConstructor({ t }) {
   const [numQuestions, setNumQuestions] = useState(30);
   const [numChoices, setNumChoices] = useState(4);
@@ -553,43 +663,35 @@ function AnswerSheetConstructor({ t }) {
 
   const choices = Array.from({ length: numChoices }, (_, i) => String.fromCharCode(97 + i));
 
-  // Determine the optimal grid size where font stays at least 10px
   const recommendations = useMemo(() => {
-    const USABLE_W_MM = 200; // 210mm (A4 width) - 10mm padding
-    const USABLE_H_MM = 287; // 297mm (A4 height) - 10mm padding
+    const USABLE_W_MM = 200;
+    const USABLE_H_MM = 287; 
     
     const NUM_W = 8; 
     const CHOICE_W = 7; 
     const COL_GAP = 3; 
     const TICKET_PAD = 4;
-    const HEADER_AND_PADDING_MM = 12; // Safety margin for header text and table borders
+    const HEADER_AND_PADDING_MM = 12; 
 
-    // 1. Calculate how many columns of tickets fit horizontally
     const ticketW = (internalCols * (NUM_W + (numChoices * CHOICE_W))) + ((internalCols - 1) * COL_GAP) + TICKET_PAD;
     const recCols = Math.max(1, Math.floor(USABLE_W_MM / ticketW));
 
-    // 2. Calculate the minimum height a ticket needs to maintain a 10px font
     const questionsPerCol = Math.ceil(numQuestions / internalCols);
-    const totalTableRows = questionsPerCol + 1; // +1 for the A B C D header
+    const totalTableRows = questionsPerCol + 1; 
     
-    // Reverse engineering the font scaling: calcFontPx = (rowHeightMm * 0.70) * 3.78
-    // So to get 10px: rowHeightMm = 10 / (0.70 * 3.78)
     const minRowHeightMm = 10 / (0.70 * 3.78);
     const minTicketH = (minRowHeightMm * totalTableRows) + HEADER_AND_PADDING_MM;
     
-    // 3. Calculate how many of these minimum-height tickets fit vertically
     const recRows = Math.max(1, Math.floor(USABLE_H_MM / minTicketH));
 
     return { recCols, recRows };
   }, [numQuestions, numChoices, internalCols]);
 
-  // Automatically apply the recommendation when the primary parameters change
   useEffect(() => {
     setTicketsPerRow(recommendations.recCols);
     setRowsPerPage(recommendations.recRows);
   }, [recommendations.recCols, recommendations.recRows]);
 
-  // Calculate the final layout and actual font size based on current selection
   const layout = useMemo(() => {
     const PAGE_H_MM = 297;
     const PAGE_PAD_MM = 10;
@@ -755,7 +857,6 @@ function AnswerSheetConstructor({ t }) {
         </div>
       </div>
 
-      {/* Info bar showing exactly what the text is doing */}
       <div className="bg-indigo-50 text-indigo-700 px-4 py-3 rounded-xl text-sm font-medium flex justify-center items-center gap-3 print:hidden shadow-sm border border-indigo-100">
         <Settings className="w-4 h-4" />
         <span>{t('sheet_fitting')} {layout.ticketsPerSheet} {t('sheet_tickets')} ({layout.gridRows}x{layout.gridCols})</span>
@@ -783,17 +884,16 @@ function AnswerSheetConstructor({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 3: MCQ GRADER (UPDATED WITH NEGATIVE MARKING) ---
+// --- SUB-COMPONENT 3: MCQ GRADER (UPDATED WITH NEGATIVE MARKING & INFO GUIDE) ---
 function MCQGrader({ t }) {
   const [keysInput, setKeysInput] = useState('');
   const [studentsInput, setStudentsInput] = useState('');
   const [showReport, setShowReport] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   
-  // Negative Marking Settings
   const [isNegativeMarking, setIsNegativeMarking] = useState(false);
   const [penalty, setPenalty] = useState(0.33);
 
-  // Psychometric Thresholds
   const DIFFICULTY_TOO_HARD = 30; 
   const DIFFICULTY_TOO_EASY = 80;
 
@@ -849,7 +949,6 @@ function MCQGrader({ t }) {
             isCorrect = true;
             score += 1;
           } else {
-            // Apply Negative Marking Penalty ONLY to incorrect guesses, not skipped questions
             if (!isSkipped && isNegativeMarking) {
               score -= parseFloat(penalty) || 0;
             }
@@ -859,10 +958,7 @@ function MCQGrader({ t }) {
           comparison.push({ index: i + 1, keyChar, studentChar, isCorrect, isVoid, isSkipped });
         }
 
-        // Clean up floating point math (e.g. 7.6700000001 -> 7.67)
         score = Number(score.toFixed(2));
-        
-        // Percentages cannot be negative, cap at 0
         const percentage = key.length > 0 ? Math.round(Math.max(0, (score / key.length) * 100)) : 0;
         
         return { id: index, name, version, originalLine: line, answers, score, percentage, comparison, wrongQuestionNumbers, totalQuestions: key.length, error: null };
@@ -877,7 +973,7 @@ function MCQGrader({ t }) {
       statsByVersion[version] = { 
         totalStudents: 0, 
         averageScore: 0, 
-        highestScore: -999, // Start very low to account for negative scores
+        highestScore: -999, 
         itemStats: Array.from({ length: parsedKeys[version].length }, (_, i) => ({ 
           questionIndex: i + 1, 
           correctCount: 0, 
@@ -913,7 +1009,6 @@ function MCQGrader({ t }) {
 
     Object.keys(statsByVersion).forEach(version => {
       const vStats = statsByVersion[version];
-      // Sorting inherently integrates Negative Marking penalties, accurately placing guessers at the bottom
       const studentsForVersion = validResults.filter(s => s.version === version).sort((a, b) => b.score - a.score);
       const n = studentsForVersion.length;
       
@@ -1070,8 +1165,140 @@ function MCQGrader({ t }) {
 
   return (
     <div className="space-y-6 print:hidden">
-      <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold text-gray-900">{t('grad_title')}</h1>
+      
+      {/* --- OFFICIAL USER GUIDE MODAL --- */}
+      {showGuide && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col my-auto">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-2xl sticky top-0 z-10">
+              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-3">
+                <BookOpen className="w-6 h-6 text-indigo-600" /> 
+                {t('guide_title')}
+              </h2>
+              <button onClick={() => setShowGuide(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+            
+            <div className="p-8 overflow-y-auto space-y-8 text-gray-700 text-sm leading-relaxed">
+              <p className="text-base font-medium text-gray-600 leading-relaxed border-l-4 border-indigo-500 pl-4 bg-indigo-50/50 p-4 rounded-r-lg">
+                {t('guide_intro')}
+              </p>
+
+              {/* Section 1 */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-gray-900 border-b pb-2">{t('g1_title')}</h3>
+                <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+                  <h4 className="font-bold text-indigo-700">{t('g1_sub1')}</h4>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li>{t('g1_format1')}</li>
+                    <li>{t('g1_v')}</li>
+                    <li className="font-medium text-gray-900">{t('g1_rule1')}</li>
+                  </ul>
+                  <h4 className="font-bold text-indigo-700 mt-4">{t('g1_sub2')}</h4>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li>{t('g1_format2')}</li>
+                    <li>{t('g1_x')}</li>
+                    <li className="font-medium text-gray-900">{t('g1_rule2')}</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Section 2 */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-gray-900 border-b pb-2">{t('g2_title')}</h3>
+                <p>{t('g2_intro')}</p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="border border-gray-200 p-4 rounded-lg">
+                    <h4 className="font-bold text-indigo-700 mb-2">{t('g2_diff_title')}</h4>
+                    <p className="mb-2"><strong>{t('g2_diff_what')}</strong></p>
+                    <p className="font-semibold mb-1">{t('g2_diff_how')}</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2">
+                      <li>{t('g2_diff_1')}</li>
+                      <li>{t('g2_diff_2')}</li>
+                      <li>{t('g2_diff_3')}</li>
+                    </ul>
+                  </div>
+
+                  <div className="border border-gray-200 p-4 rounded-lg">
+                    <h4 className="font-bold text-indigo-700 mb-2">{t('g2_disc_title')}</h4>
+                    <p className="mb-2"><strong>{t('g2_disc_what')}</strong></p>
+                    <p className="font-semibold mb-1">{t('g2_disc_how')}</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2">
+                      <li><span className="text-green-600 font-bold">{t('g2_disc_1').split(':')[0]}:</span> {t('g2_disc_1').split(':').slice(1).join(':')}</li>
+                      <li><span className="text-gray-500 font-bold">{t('g2_disc_2').split(':')[0]}:</span> {t('g2_disc_2').split(':').slice(1).join(':')}</li>
+                      <li><span className="text-red-600 font-bold">{t('g2_disc_3').split(':')[0]}:</span> {t('g2_disc_3').split(':').slice(1).join(':')}</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="border border-gray-200 p-4 rounded-lg bg-indigo-50/30">
+                  <h4 className="font-bold text-indigo-700 mb-2">{t('g2_de_title')}</h4>
+                  <p className="mb-2"><strong>{t('g2_de_what')}</strong></p>
+                  <p className="mb-2"><strong>{t('g2_de_why')}</strong></p>
+                  <p className="font-semibold mb-1">{t('g2_de_how')}</p>
+                  <ul className="list-disc list-inside space-y-1 ml-2 mb-3">
+                    <li><span className="font-bold text-green-600">{t('g2_de_1').split(':')[0]}:</span> {t('g2_de_1').split(':').slice(1).join(':')}</li>
+                    <li><span className="font-bold text-yellow-600">{t('g2_de_2').split(':')[0]}:</span> {t('g2_de_2').split(':').slice(1).join(':')}</li>
+                    <li><span className="font-bold text-red-600">{t('g2_de_3').split(':')[0]}:</span> {t('g2_de_3').split(':').slice(1).join(':')}</li>
+                  </ul>
+                  <div className="bg-amber-50 border-l-4 border-amber-400 p-3 rounded text-amber-900 font-medium text-xs">
+                    {t('g2_de_note')}
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3 */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-gray-900 border-b pb-2">{t('g3_title')}</h3>
+                <p>{t('g3_intro')}</p>
+                <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+                  <p className="font-bold text-gray-800">{t('g3_why')}</p>
+                  <p>{t('g3_why_text')}</p>
+                  <p className="font-bold text-indigo-700 mt-2">{t('g3_form')}</p>
+                  <ul className="list-disc list-inside space-y-1 ml-2 font-mono bg-white p-2 rounded border border-gray-200 inline-block">
+                    <li>{t('g3_form_1')}</li>
+                    <li>{t('g3_form_2')}</li>
+                  </ul>
+                  <p className="text-xs text-gray-500 italic mt-2">{t('g3_note')}</p>
+                </div>
+              </div>
+
+              {/* Section 4 */}
+              <div className="space-y-4 pb-4">
+                <h3 className="text-lg font-bold text-gray-900 border-b pb-2">{t('g4_title')}</h3>
+                <p>{t('g4_intro')}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="border border-purple-200 bg-purple-50 p-3 rounded-lg flex gap-2">
+                    <Award className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
+                    <p><span className="font-bold text-purple-800">{t('g4_1').split(':')[0]}:</span> {t('g4_1').split(':').slice(1).join(':')}</p>
+                  </div>
+                  <div className="border border-green-200 bg-green-50 p-3 rounded-lg flex gap-2">
+                    <Check className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                    <p><span className="font-bold text-green-800">{t('g4_2').split(':')[0]}:</span> {t('g4_2').split(':').slice(1).join(':')}</p>
+                  </div>
+                  <div className="border border-yellow-200 bg-yellow-50 p-3 rounded-lg flex gap-2">
+                    <Activity className="w-5 h-5 text-yellow-600 shrink-0 mt-0.5" />
+                    <p><span className="font-bold text-yellow-800">{t('g4_3').split(':')[0]}:</span> {t('g4_3').split(':').slice(1).join(':')}</p>
+                  </div>
+                  <div className="border border-red-200 bg-red-50 p-3 rounded-lg flex gap-2">
+                    <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                    <p><span className="font-bold text-red-800">{t('g4_4').split(':')[0]}:</span> {t('g4_4').split(':').slice(1).join(':')}</p>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="text-center space-y-2 relative">
+        <div className="flex items-center justify-center gap-3">
+          <h1 className="text-3xl font-bold text-gray-900">{t('grad_title')}</h1>
+          <button onClick={() => setShowGuide(true)} className="text-indigo-500 hover:text-indigo-700 bg-indigo-50 p-1.5 rounded-full transition-colors flex-shrink-0" title={t('guide_title')}>
+            <Info className="w-6 h-6" />
+          </button>
+        </div>
         <p className="text-gray-500">{t('grad_subtitle')}</p>
       </div>
 
