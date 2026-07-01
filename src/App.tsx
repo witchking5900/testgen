@@ -89,6 +89,18 @@ const TRANSLATIONS = {
     tooltip_void: "Voided: +1 Free Point",
     tooltip_skipped: "Skipped (No Penalty)",
     tooltip_exp: "Exp:",
+
+    // Exam Vitals Categories
+    cat_elite: "Elite",
+    cat_workhorse: "Workhorse",
+    cat_freebie: "Freebie",
+    cat_toxic: "Toxic",
+    cat_std: "Standard",
+    rep_target_elite: "(rec. 15%-20%)",
+    rep_target_workhorse: "(rec. ~70%)",
+    rep_target_freebie: "(rec. 10%-15%)",
+    rep_target_toxic: "(rec. 0%)",
+    rep_target_std: "(minimize)",
     
     // Official User Guide (English)
     guide_title: "MCQ Grader & Analytics: Official User Guide",
@@ -140,9 +152,9 @@ const TRANSLATIONS = {
 
     g4_title: "4. The Action Matrix Verdicts",
     g4_intro: "To save you time, the system processes the Difficulty and Discrimination indices together to give you an immediate, actionable verdict for every question:",
-    g4_1: "Elite (Hard but Fair): Very low success rate, but highly positive discrimination. Keep it. It beautifully identifies your absolute best students. This should be 15% or 20% of entire test .",
-    g4_2: "Workhorse (Good D): Balanced difficulty and strong positive discrimination. This is the backbone of a reliable exam. Keep it. This should be core of a test nearly 70%.",
-    g4_3: "Freebie (Too Easy): Nearly everyone got it right. Freebies serve two crucial purposes. First, they break the ice and reduce acute test anxiety. Second, they test the absolute, fundamental "do-not-kill-the-patient" baseline knowledge Review it to ensure the distractors aren't too obvious. This should be 10% or 15%.",
+    g4_1: "Elite (Hard but Fair): Very low success rate, but highly positive discrimination. Keep it. It beautifully identifies your absolute best students. This should be 15% or 20% of entire test.",
+    g4_2: "Workhorse (Good D): Balanced difficulty and strong positive discrimination. This is the backbone of a reliable exam. Keep it. This should be the core of a test, nearly 70%.",
+    g4_3: "Freebie (Too Easy): Nearly everyone got it right. Freebies serve two crucial purposes. First, they break the ice and reduce acute test anxiety. Second, they test the absolute, fundamental 'do-not-kill-the-patient' baseline knowledge. Review it to ensure the distractors aren't too obvious. This should be 10% or 15%.",
     g4_4: "Toxic Trap (D < 0): Negative discrimination. Purge or drastically rewrite this question, as it is actively penalizing your most prepared students."
   },
   ka: {
@@ -231,6 +243,18 @@ const TRANSLATIONS = {
     tooltip_skipped: "გამოტოვებულია (ჯარიმის გარეშე)",
     tooltip_exp: "სწორი:",
 
+    // Exam Vitals Categories
+    cat_elite: "ელიტური",
+    cat_workhorse: "იდეალური",
+    cat_freebie: "მარტივი",
+    cat_toxic: "ტოქსიკური",
+    cat_std: "სტანდარტული",
+    rep_target_elite: "(რეკ. 15%-20%)",
+    rep_target_workhorse: "(რეკ. ~70%)",
+    rep_target_freebie: "(რეკ. 10%-15%)",
+    rep_target_toxic: "(რეკ. 0%)",
+    rep_target_std: "(მინიმუმამდე)",
+
     // Official User Guide (Georgian)
     guide_title: "MCQ შემფასებელი და ანალიტიკა: ოფიციალური სახელმძღვანელო",
     guide_intro: "კეთილი იყოს თქვენი მობრძანება Advanced MCQ Grader-ში. ეს ინსტრუმენტი არა მხოლოდ ითვლის ნედლ ქულებს, არამედ აკეთებს ავტომატიზირებულ ფსიქომეტრიულ ანალიზს ტესტის ხარისხის, სამართლიანობისა და საიმედოობის დასადგენად. ქვემოთ მოცემულია მონაცემთა შეყვანის წესები და სტატისტიკური მეტრიკების განმარტებები.",
@@ -283,7 +307,7 @@ const TRANSLATIONS = {
     g4_intro: "დროის დასაზოგად, სისტემა აანალიზებს სირთულესა და დისკრიმინაციას და გაძლევთ მზა ვერდიქტს თითოეულ კითხვაზე:",
     g4_1: "ელიტური (Elite): ძალიან დაბალი წარმატების %, მაგრამ მაღალი დისკრიმინაცია. დატოვეთ. იდეალურად ავლენს საუკეთესო სტუდენტებს. ეს უნდა იყოს მთლიანი შეკითხვების 15% ან 20%.",
     g4_2: "იდეალური (Workhorse): ბალანსირებული სირთულე და კარგი დისკრიმინაცია. საიმედო გამოცდის ხერხემალია. დატოვეთ. ეს უნდა იყოს ტესტის ძირითადი ღერძი, დაახლოებით 70%.",
-    g4_3: "მარტივი (Freebie): თითქმის ყველამ უპასუხა, მარტივ კითხვებს აქვს ორი დატვირთვა, პირველი ხსნიან საგამოცდო სტრესს და მეორე ამოწმებენ ძალიან, ძალიან ბაზისურ ცოდნას, რეკომდენდირებულია რომ გადახედოთ მცდარ პასუხებს (დისტრაქტორებს).უნდა იყოს დაახლოებით 10%",
+    g4_3: "მარტივი (Freebie): თითქმის ყველამ უპასუხა, მარტივ კითხვებს აქვს ორი დატვირთვა, პირველი ხსნიან საგამოცდო სტრესს და მეორე ამოწმებენ ძალიან, ძალიან ბაზისურ ცოდნას, რეკომდენდირებულია რომ გადახედოთ მცდარ პასუხებს (დისტრაქტორებს).უნდა იყოს დაახლოებით 10%.",
     g4_4: "ტოქსიკური (Toxic Trap): უარყოფითი დისკრიმინაცია. წაშალეთ ან თავიდან დაწერეთ - ის პირდაპირ აზარალებს კარგად მომზადებულ სტუდენტებს."
   }
 };
@@ -884,7 +908,7 @@ function AnswerSheetConstructor({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 3: MCQ GRADER (UPDATED WITH NEGATIVE MARKING & INFO GUIDE) ---
+// --- SUB-COMPONENT 3: MCQ GRADER (UPDATED WITH EXAM VITALS / BALANCE BAR) ---
 function MCQGrader({ t }) {
   const [keysInput, setKeysInput] = useState('');
   const [studentsInput, setStudentsInput] = useState('');
@@ -1086,78 +1110,124 @@ function MCQGrader({ t }) {
         </div>
 
         <div className="space-y-12">
-          {Object.entries(statistics).map(([version, data]) => (
-            <div key={version} className="border border-gray-200 rounded-lg overflow-hidden break-inside-avoid">
-              <div className="bg-gray-50 border-b border-gray-200 p-4 flex justify-between items-center">
-                <h3 className="text-lg font-bold text-gray-800">{t('rep_version')} {version}</h3>
-                <div className="flex gap-4 text-sm">
-                  <span className="font-semibold text-gray-600">{t('grad_students')}: <span className="text-gray-900">{data.totalStudents}</span></span>
-                  <span className="font-semibold text-gray-600">{t('grad_avg')}: <span className="text-indigo-600">{data.averageScore}</span></span>
-                  <span className="font-semibold text-gray-600">{t('grad_best')}: <span className="text-green-600">{data.highestScore}</span></span>
-                </div>
-              </div>
-              <table className="w-full text-sm text-left">
-                <thead className="bg-white border-b border-gray-200 text-gray-600">
-                  <tr>
-                    <th className="px-4 py-3 font-semibold w-12 text-center">{t('rep_q')}</th>
-                    <th className="px-4 py-3 font-semibold w-24 text-center">{t('rep_ans')}</th>
-                    <th className="px-4 py-3 font-semibold w-32 text-center">{t('rep_rate')}</th>
-                    <th className="px-4 py-3 font-semibold w-32 text-center">{t('rep_disc')}</th>
-                    <th className="px-4 py-3 font-semibold w-32 text-center">{t('rep_de')}</th>
-                    <th className="px-4 py-3 font-semibold">{t('rep_analysis')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.itemStats.map((stat) => {
-                    const freqString = Object.entries(stat.answerFrequencies)
-                      .sort(([a], [b]) => a.localeCompare(b))
-                      .map(([ans, count]) => `${ans}: ${count}`)
-                      .join(' | ');
+          {Object.entries(statistics).map(([version, data]) => {
+            
+            // Calculate Exam Vitals percentages dynamically per test version
+            const validItems = data.itemStats.filter(s => !s.isVoid);
+            const totalValid = validItems.length;
+            
+            const countElite = validItems.filter(s => s.flag === 'ELITE').length;
+            const countWorkhorse = validItems.filter(s => s.flag === 'WORKHORSE').length;
+            const countFreebie = validItems.filter(s => s.flag === 'FREEBIE').length;
+            const countToxic = validItems.filter(s => s.flag === 'TOXIC').length;
+            const countStd = validItems.filter(s => !['ELITE', 'WORKHORSE', 'FREEBIE', 'TOXIC'].includes(s.flag)).length;
 
-                    return (
-                      <tr key={stat.questionIndex} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                        <td className="px-4 py-3 text-center font-medium text-gray-900">{stat.questionIndex}</td>
-                        <td className="px-4 py-3 text-center font-mono">{stat.expectedAnswer}</td>
-                        <td className="px-4 py-3 text-center">
-                          {stat.isVoid ? (
-                             <span className="font-bold text-gray-300">-</span>
-                          ) : (
-                             <span className={`font-bold ${stat.percentCorrect < 30 ? 'text-red-600' : stat.percentCorrect > 80 ? 'text-yellow-600' : 'text-gray-700'}`}>
-                               {data.totalStudents > 0 ? stat.percentCorrect : 0}%
-                             </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {stat.discrimination !== null ? (
-                            <span className={`font-bold ${stat.discrimination < 0 ? 'text-red-600' : stat.discrimination > 0.25 ? 'text-green-600' : 'text-gray-500'}`}>
-                              {stat.discrimination > 0 ? '+' : ''}{stat.discrimination}
-                            </span>
-                          ) : <span className="font-bold text-gray-300">-</span>}
-                        </td>
-                        <td className="px-4 py-3 text-center cursor-help" title={`Answers chosen: ${freqString || 'None'}`}>
-                          {stat.distractorEfficiency !== null ? (
-                            <span className={`font-bold border-b border-dashed border-gray-300 pb-0.5 ${stat.distractorEfficiency === 0 ? 'text-red-600' : stat.distractorEfficiency >= 66 ? 'text-green-600' : 'text-yellow-600'}`}>
-                              {stat.distractorEfficiency}%
-                            </span>
-                          ) : <span className="font-bold text-gray-300">-</span>}
-                        </td>
-                        <td className="px-4 py-3">
-                          {stat.flag === 'VOID' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 text-gray-600 border border-gray-300"><Slash className="w-3.5 h-3.5" /> {t('rep_void_badge')}</span>}
-                          {stat.flag === 'TOXIC' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-red-100 text-red-800 border border-red-200"><AlertCircle className="w-3.5 h-3.5" /> {t('rep_toxic')}</span>}
-                          {stat.flag === 'ELITE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200"><Award className="w-3.5 h-3.5" /> {t('rep_elite')}</span>}
-                          {stat.flag === 'WORKHORSE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-green-100 text-green-800 border border-green-200"><Check className="w-3.5 h-3.5" /> {t('rep_workhorse')}</span>}
-                          {stat.flag === 'FREEBIE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-200"><Activity className="w-3.5 h-3.5" /> {t('rep_freebie')}</span>}
-                          
-                          {!['VOID', 'TOXIC', 'ELITE', 'WORKHORSE', 'FREEBIE'].includes(stat.flag) && data.totalStudents >= 3 && <span className="text-xs text-gray-500">{t('rep_std')}</span>}
-                          {data.totalStudents > 0 && data.totalStudents < 3 && !stat.isVoid && <span className="text-xs text-gray-400">{t('rep_nodata')}</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ))}
+            const pctElite = totalValid ? Math.round((countElite / totalValid) * 100) : 0;
+            const pctWorkhorse = totalValid ? Math.round((countWorkhorse / totalValid) * 100) : 0;
+            const pctFreebie = totalValid ? Math.round((countFreebie / totalValid) * 100) : 0;
+            const pctToxic = totalValid ? Math.round((countToxic / totalValid) * 100) : 0;
+            const pctStd = totalValid ? Math.round((countStd / totalValid) * 100) : 0;
+
+            return (
+              <div key={version} className="border border-gray-200 rounded-lg overflow-hidden break-inside-avoid">
+                {/* Version Title & Basic Stats */}
+                <div className="bg-gray-50 border-b border-gray-200 p-4 flex justify-between items-center">
+                  <h3 className="text-lg font-bold text-gray-800">{t('rep_version')} {version}</h3>
+                  <div className="flex gap-4 text-sm">
+                    <span className="font-semibold text-gray-600">{t('grad_students')}: <span className="text-gray-900">{data.totalStudents}</span></span>
+                    <span className="font-semibold text-gray-600">{t('grad_avg')}: <span className="text-indigo-600">{data.averageScore}</span></span>
+                    <span className="font-semibold text-gray-600">{t('grad_best')}: <span className="text-green-600">{data.highestScore}</span></span>
+                  </div>
+                </div>
+                
+                {/* 📊 EXAM BALANCE SUMMARY BAR */}
+                <div className="bg-white px-4 py-3 border-b border-gray-200 grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-1"><Check className="w-3 h-3 text-green-600" /> {t('cat_workhorse')}</span>
+                    <span className="text-lg font-bold text-gray-800">{pctWorkhorse}% <span className="text-xs text-gray-400 font-normal">{t('rep_target_workhorse')}</span></span>
+                  </div>
+                  <div className="flex flex-col border-l border-gray-100 pl-4">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-1"><Award className="w-3 h-3 text-purple-600" /> {t('cat_elite')}</span>
+                    <span className="text-lg font-bold text-gray-800">{pctElite}% <span className="text-xs text-gray-400 font-normal">{t('rep_target_elite')}</span></span>
+                  </div>
+                  <div className="flex flex-col border-l border-gray-100 pl-4">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-1"><Activity className="w-3 h-3 text-yellow-500" /> {t('cat_freebie')}</span>
+                    <span className="text-lg font-bold text-gray-800">{pctFreebie}% <span className="text-xs text-gray-400 font-normal">{t('rep_target_freebie')}</span></span>
+                  </div>
+                  <div className="flex flex-col border-l border-gray-100 pl-4">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase flex items-center gap-1"><AlertCircle className="w-3 h-3 text-red-500" /> {t('cat_toxic')}</span>
+                    <span className={`text-lg font-bold ${pctToxic > 0 ? 'text-red-600' : 'text-gray-800'}`}>{pctToxic}% <span className="text-xs text-gray-400 font-normal">{t('rep_target_toxic')}</span></span>
+                  </div>
+                  <div className="flex flex-col border-l border-gray-100 pl-4">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase">{t('cat_std')}</span>
+                    <span className="text-lg font-bold text-gray-800">{pctStd}% <span className="text-xs text-gray-400 font-normal">{t('rep_target_std')}</span></span>
+                  </div>
+                </div>
+
+                {/* Individual Question Table */}
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-gray-50 border-b border-gray-200 text-gray-600">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold w-12 text-center">{t('rep_q')}</th>
+                      <th className="px-4 py-3 font-semibold w-24 text-center">{t('rep_ans')}</th>
+                      <th className="px-4 py-3 font-semibold w-32 text-center">{t('rep_rate')}</th>
+                      <th className="px-4 py-3 font-semibold w-32 text-center">{t('rep_disc')}</th>
+                      <th className="px-4 py-3 font-semibold w-32 text-center">{t('rep_de')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('rep_analysis')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.itemStats.map((stat) => {
+                      const freqString = Object.entries(stat.answerFrequencies)
+                        .sort(([a], [b]) => a.localeCompare(b))
+                        .map(([ans, count]) => `${ans}: ${count}`)
+                        .join(' | ');
+
+                      return (
+                        <tr key={stat.questionIndex} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                          <td className="px-4 py-3 text-center font-medium text-gray-900">{stat.questionIndex}</td>
+                          <td className="px-4 py-3 text-center font-mono">{stat.expectedAnswer}</td>
+                          <td className="px-4 py-3 text-center">
+                            {stat.isVoid ? (
+                               <span className="font-bold text-gray-300">-</span>
+                            ) : (
+                               <span className={`font-bold ${stat.percentCorrect < 30 ? 'text-red-600' : stat.percentCorrect > 80 ? 'text-yellow-600' : 'text-gray-700'}`}>
+                                 {data.totalStudents > 0 ? stat.percentCorrect : 0}%
+                               </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {stat.discrimination !== null ? (
+                              <span className={`font-bold ${stat.discrimination < 0 ? 'text-red-600' : stat.discrimination > 0.25 ? 'text-green-600' : 'text-gray-500'}`}>
+                                {stat.discrimination > 0 ? '+' : ''}{stat.discrimination}
+                              </span>
+                            ) : <span className="font-bold text-gray-300">-</span>}
+                          </td>
+                          <td className="px-4 py-3 text-center cursor-help" title={`Answers chosen: ${freqString || 'None'}`}>
+                            {stat.distractorEfficiency !== null ? (
+                              <span className={`font-bold border-b border-dashed border-gray-300 pb-0.5 ${stat.distractorEfficiency === 0 ? 'text-red-600' : stat.distractorEfficiency >= 66 ? 'text-green-600' : 'text-yellow-600'}`}>
+                                {stat.distractorEfficiency}%
+                              </span>
+                            ) : <span className="font-bold text-gray-300">-</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            {stat.flag === 'VOID' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-gray-100 text-gray-600 border border-gray-300"><Slash className="w-3.5 h-3.5" /> {t('rep_void_badge')}</span>}
+                            {stat.flag === 'TOXIC' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-red-100 text-red-800 border border-red-200"><AlertCircle className="w-3.5 h-3.5" /> {t('rep_toxic')}</span>}
+                            {stat.flag === 'ELITE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200"><Award className="w-3.5 h-3.5" /> {t('rep_elite')}</span>}
+                            {stat.flag === 'WORKHORSE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-green-100 text-green-800 border border-green-200"><Check className="w-3.5 h-3.5" /> {t('rep_workhorse')}</span>}
+                            {stat.flag === 'FREEBIE' && <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-200"><Activity className="w-3.5 h-3.5" /> {t('rep_freebie')}</span>}
+                            
+                            {!['VOID', 'TOXIC', 'ELITE', 'WORKHORSE', 'FREEBIE'].includes(stat.flag) && data.totalStudents >= 3 && <span className="text-xs text-gray-500">{t('rep_std')}</span>}
+                            {data.totalStudents > 0 && data.totalStudents < 3 && !stat.isVoid && <span className="text-xs text-gray-400">{t('rep_nodata')}</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
