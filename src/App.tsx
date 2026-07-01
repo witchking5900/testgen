@@ -140,9 +140,9 @@ const TRANSLATIONS = {
 
     g4_title: "4. The Action Matrix Verdicts",
     g4_intro: "To save you time, the system processes the Difficulty and Discrimination indices together to give you an immediate, actionable verdict for every question:",
-    g4_1: "Elite (Hard but Fair): Very low success rate, but highly positive discrimination. Keep it. It beautifully identifies your absolute best students.",
-    g4_2: "Workhorse (Good D): Balanced difficulty and strong positive discrimination. This is the backbone of a reliable exam. Keep it.",
-    g4_3: "Freebie (Too Easy): Nearly everyone got it right. Review it to ensure the distractors aren't too obvious.",
+    g4_1: "Elite (Hard but Fair): Very low success rate, but highly positive discrimination. Keep it. It beautifully identifies your absolute best students. This should be 15% or 20% of entire test .",
+    g4_2: "Workhorse (Good D): Balanced difficulty and strong positive discrimination. This is the backbone of a reliable exam. Keep it. This should be core of a test nearly 70%.",
+    g4_3: "Freebie (Too Easy): Nearly everyone got it right. Freebies serve two crucial purposes. First, they break the ice and reduce acute test anxiety. Second, they test the absolute, fundamental "do-not-kill-the-patient" baseline knowledge Review it to ensure the distractors aren't too obvious. This should be 10% or 15%.",
     g4_4: "Toxic Trap (D < 0): Negative discrimination. Purge or drastically rewrite this question, as it is actively penalizing your most prepared students."
   },
   ka: {
@@ -281,9 +281,9 @@ const TRANSLATIONS = {
 
     g4_title: "4. მატრიცის ვერდიქტი (Action Matrix)",
     g4_intro: "დროის დასაზოგად, სისტემა აანალიზებს სირთულესა და დისკრიმინაციას და გაძლევთ მზა ვერდიქტს თითოეულ კითხვაზე:",
-    g4_1: "ელიტური (Elite): ძალიან დაბალი წარმატების %, მაგრამ მაღალი დისკრიმინაცია. დატოვეთ. იდეალურად ავლენს საუკეთესო სტუდენტებს.",
-    g4_2: "იდეალური (Workhorse): ბალანსირებული სირთულე და კარგი დისკრიმინაცია. საიმედო გამოცდის ხერხემალია. დატოვეთ.",
-    g4_3: "მარტივი (Freebie): თითქმის ყველამ უპასუხა. გადახედეთ მცდარ პასუხებს (დისტრაქტორებს).",
+    g4_1: "ელიტური (Elite): ძალიან დაბალი წარმატების %, მაგრამ მაღალი დისკრიმინაცია. დატოვეთ. იდეალურად ავლენს საუკეთესო სტუდენტებს. ეს უნდა იყოს მთლიანი შეკითხვების 15% ან 20%.",
+    g4_2: "იდეალური (Workhorse): ბალანსირებული სირთულე და კარგი დისკრიმინაცია. საიმედო გამოცდის ხერხემალია. დატოვეთ. ეს უნდა იყოს ტესტის ძირითადი ღერძი, დაახლოებით 70%.",
+    g4_3: "მარტივი (Freebie): თითქმის ყველამ უპასუხა, მარტივ კითხვებს აქვს ორი დატვირთვა, პირველი ხსნიან საგამოცდო სტრესს და მეორე ამოწმებენ ძალიან ძალიან ბაზისურ ცოდნას, რეკომდენდირებულია რომ გადახედოთ მცდარ პასუხებს (დისტრაქტორებს).უნდა იყოს დაახლოებით 10%",
     g4_4: "ტოქსიკური (Toxic Trap): უარყოფითი დისკრიმინაცია. წაშალეთ ან თავიდან დაწერეთ - ის პირდაპირ აზარალებს კარგად მომზადებულ სტუდენტებს."
   }
 };
