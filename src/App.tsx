@@ -854,7 +854,14 @@ function AnswerSheetConstructor({ t }) {
     if (item.ticketsPerRow) setTicketsPerRow(item.ticketsPerRow);
     if (item.rowsPerPage) setRowsPerPage(item.rowsPerPage);
     setFillMode(item.fillMode ?? 'cycle');
-    setSets(JSON.parse(JSON.stringify(item.sets || [])));
+    
+    // Ensure bulkText is restored for each set so input boxes populate correctly
+    const restoredSets = (item.sets || []).map((s) => ({
+      ...s,
+      bulkText: s.bulkText || answersToBulkString(s.answers || {}, item.numQuestions ?? 30),
+    }));
+    setSets(restoredSets);
+
     setSaveTitle(item.title || '');
     setSaveYear(item.year || '2026');
     setSaveSemester(item.semester || 'Autumn');
