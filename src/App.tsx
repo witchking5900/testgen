@@ -359,6 +359,18 @@ function TestGenerator({ t }) {
   const [isRandomized, setIsRandomized] = useState(true);
   const [isChoiceRandomized, setIsChoiceRandomized] = useState(true);
   const [showNumbering, setShowNumbering] = useState(true);
+  
+  // --- NEW STATES FOR KEY EXTRACTION & SYNC ---
+  const [removeAsterisks, setRemoveAsterisks] = useState(false);
+  const [extractedKey, setExtractedKey] = useState({});
+  const [extractedBulkKey, setExtractedBulkKey] = useState('');
+  
+  const [syncAnswerKey, setSyncAnswerKey] = useState(false);
+  const [syncModule, setSyncModule] = useState('1');
+  const [syncSet, setSyncSet] = useState('1');
+  const [syncSemester, setSyncSemester] = useState('Autumn');
+  const [syncYear, setSyncYear] = useState(new Date().getFullYear().toString());
+
   const [showPasteModal, setShowPasteModal] = useState(null);
   const [pasteText, setPasteText] = useState('');
 
@@ -378,6 +390,8 @@ function TestGenerator({ t }) {
       setIsRandomized(true);
       setIsChoiceRandomized(true);
       setShowNumbering(true);
+      setRemoveAsterisks(false);
+      setExtractedBulkKey('');
     }
   };
 
@@ -439,51 +453,55 @@ function TestGenerator({ t }) {
     setBases(prev => prev.map(base => base.id === id ? { ...base, name: fileName, content: questions } : base));
   };
 
-  const shuffleChoicesInQuestion = (text) => {
-    const isSlashQuestion = text.trim().startsWith('////');
+  // Upgraded to extract correct answer keys and handle '*' stripping
+  const processQuestionOptions = (text) => {
     const lines = text.split('\n');
     const questionLines = [];
     const choiceLines = [];
 
-    if (isSlashQuestion) {
-      lines.forEach(line => {
-        const trimmed = line.trim();
-        if (!trimmed) return; 
-        if (trimmed.startsWith('////')) questionLines.push(line);
-        else if (trimmed.startsWith('//')) choiceLines.push(line);
-        else questionLines.push(line);
-      });
+    // Parse out choices vs question body
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      if (/^[A-Ea-e][\.\)]\s/.test(line) || line.startsWith('choice.') || line.startsWith('//')) {
+        choiceLines.push(line);
+      } else {
+        questionLines.push(line);
+      }
+    });
 
-      if (choiceLines.length === 0) return text;
-      const shuffledChoices = shuffleArray(choiceLines);
-      const cleanQuestion = questionLines.join('\n').trim();
-      return [cleanQuestion, ...shuffledChoices].join('\n');
+    if (choiceLines.length === 0) return { text: text, answers: [] };
 
-    } else {
-      lines.forEach(line => {
-        const trimmed = line.trim();
-        if (!trimmed) return;
-        if (/^[A-Ea-e][\.\)]\s/.test(line) || line.startsWith('choice.')) choiceLines.push(line);
-        else questionLines.push(line);
-      });
+    // Standardize all choices
+    const choicesData = choiceLines.map(line => {
+      const isCorrect = line.endsWith('*') || line.includes('*');
+      const cleanContent = line
+        .replace(/^[A-Ea-e][\.\)]\s+|^choice\.\s+|^\/\/\/?\s*/, '')
+        .replace(/\*$/, '')
+        .trim();
+      return { content: cleanContent, isCorrect };
+    });
 
-      if (choiceLines.length === 0) return text;
-
-      const choicesData = choiceLines.map(line => {
-        const isCorrect = line.includes('*');
-        const cleanContent = line.replace(/^[A-Ea-e][\.\)]\s+|^choice\.\s+/, '').replace(/\*$/, '').trim();
-        return { content: cleanContent, isCorrect };
-      });
-
-      const shuffledData = shuffleArray(choicesData);
-      const newChoiceLines = shuffledData.map((item, idx) => {
-        const prefix = `${String.fromCharCode(65 + idx)}.`;
-        return `${prefix} ${item.content}${item.isCorrect ? ' *' : ''}`;
-      });
-
-      const cleanQuestion = questionLines.join('\n').trim();
-      return [cleanQuestion, ...newChoiceLines].join('\n');
+    let finalChoices = choicesData;
+    if (isChoiceRandomized) {
+      finalChoices = shuffleArray(choicesData);
     }
+
+    const correctAnswers = [];
+    const newChoiceLines = finalChoices.map((item, idx) => {
+      const letter = String.fromCharCode(97 + idx); // 'a', 'b', 'c'...
+      if (item.isCorrect) correctAnswers.push(letter);
+      
+      const prefix = `${letter.toUpperCase()}.`;
+      // Conditionally keep or remove the '*'
+      const marker = (!removeAsterisks && item.isCorrect) ? ' *' : '';
+      return `${prefix} ${item.content}${marker}`;
+    });
+
+    const cleanQuestion = questionLines.join('\n').trim();
+    const finalText = [cleanQuestion, ...newChoiceLines].join('\n');
+
+    return { text: finalText, answers: correctAnswers };
   };
 
   const generateTest = () => {
@@ -497,8 +515,79 @@ function TestGenerator({ t }) {
     });
 
     if (isRandomized) finalQuestions = shuffleArray(finalQuestions);
-    if (isChoiceRandomized) finalQuestions = finalQuestions.map(q => shuffleChoicesInQuestion(q));
-    setGeneratedTest(finalQuestions);
+    
+    const keyObj = {};
+    let bulkKeyString = '';
+
+    // Process each question for shuffling and key extraction
+    const processedQuestions = finalQuestions.map((q, idx) => {
+      const result = processQuestionOptions(q);
+      const qNum = idx + 1;
+      
+      keyObj[qNum] = result.answers;
+      
+      if (result.answers.length === 0) bulkKeyString += '-';
+      else if (result.answers.length === 1) bulkKeyString += result.answers[0];
+      else bulkKeyString += `(${result.answers.join('')})`;
+      
+      return result.text;
+    });
+
+    setGeneratedTest(processedQuestions);
+    setExtractedKey(keyObj);
+    setExtractedBulkKey(bulkKeyString);
+  };
+
+  const handleSaveToMemory = () => {
+    if (!extractedBulkKey) return alert("No key to save! Generate a test first.");
+    
+    try {
+      const raw = localStorage.getItem('answer_sheet_saved_keys_v1');
+      let savedKeysArchive = raw ? JSON.parse(raw) : [];
+      
+      const newSet = {
+        id: Date.now(),
+        name: syncSet.trim() || '1',
+        answers: extractedKey,
+        bulkText: extractedBulkKey
+      };
+
+      // Check if this module/year/semester combo already exists to merge it
+      const existingIndex = savedKeysArchive.findIndex(k => 
+        k.moduleName === syncModule && 
+        k.year === syncYear && 
+        k.semester === syncSemester
+      );
+
+      if (existingIndex >= 0) {
+        savedKeysArchive[existingIndex].sets.push(newSet);
+        savedKeysArchive[existingIndex].updatedAt = new Date().toISOString();
+      } else {
+        // Create brand new entry
+        const newEntry = {
+          id: Date.now(),
+          title: `Module ${syncModule || '1'}`,
+          year: syncYear.trim() || '2026',
+          semester: syncSemester,
+          moduleName: syncModule,
+          numQuestions: generatedTest.length,
+          numChoices: 4, // Safe default
+          internalCols: 2,
+          ticketsPerRow: 2,
+          rowsPerPage: 5,
+          fillMode: 'cycle',
+          sets: [newSet],
+          updatedAt: new Date().toISOString(),
+        };
+        savedKeysArchive = [newEntry, ...savedKeysArchive];
+      }
+
+      localStorage.setItem('answer_sheet_saved_keys_v1', JSON.stringify(savedKeysArchive));
+      alert(`✅ Answer Key saved!\nYou can now load it in the Answer Sheet Constructor or MCQ Grader.`);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save answer key to memory.");
+    }
   };
 
   const copyToClipboard = () => {
@@ -509,6 +598,16 @@ function TestGenerator({ t }) {
     textArea.select();
     document.execCommand('copy');
     document.body.removeChild(textArea);
+  };
+
+  const copyKeyToClipboard = () => {
+    const textArea = document.createElement("textarea");
+    textArea.value = extractedBulkKey;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+    alert("Key copied to clipboard!");
   };
 
   const handleFileUpload = (event, id) => {
@@ -624,9 +723,53 @@ function TestGenerator({ t }) {
             <input type="checkbox" checked={showNumbering} onChange={() => setShowNumbering(!showNumbering)} className="hidden" />
             <span className="text-sm font-medium text-gray-700 uppercase tracking-wide flex items-center gap-2"><Hash className="w-4 h-4" /> {t('gen_numbering')}</span>
           </label>
+          
+          {/* NEW: EXTRACT KEY & HIDE * TOGGLE */}
+          <label className="flex items-center gap-3 cursor-pointer select-none bg-indigo-50 px-4 py-2 rounded-lg border border-indigo-200 shadow-sm">
+            <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ${removeAsterisks ? 'bg-indigo-600' : 'bg-indigo-200'}`}>
+              <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${removeAsterisks ? 'translate-x-4' : 'translate-x-0'}`} />
+            </div>
+            <input type="checkbox" checked={removeAsterisks} onChange={() => setRemoveAsterisks(!removeAsterisks)} className="hidden" />
+            <span className="text-sm font-bold text-indigo-900 uppercase tracking-wide flex items-center gap-2">🔑 Extract Key & Hide *</span>
+          </label>
         </div>
+
         <button onClick={generateTest} className="w-full sm:w-auto bg-indigo-600 text-white px-8 py-3 rounded-lg shadow-md font-semibold flex items-center justify-center gap-2"><RefreshCw className="w-5 h-5" /> {t('gen_btn')}</button>
       </div>
+
+      {/* NEW: SYNC AND VIEW EXTRACTED KEY PANEL */}
+      {removeAsterisks && generatedTest.length > 0 && (
+        <div className="bg-indigo-50/50 border border-indigo-200 rounded-xl p-6 flex flex-col gap-4 shadow-sm animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center justify-between">
+             <h3 className="font-bold text-indigo-900 flex items-center gap-2">🔑 Answer Key Extracted (Ready for Sheets/Grading)</h3>
+             <button onClick={copyKeyToClipboard} className="bg-white hover:bg-gray-50 text-indigo-700 px-3 py-1.5 rounded-lg border border-indigo-200 text-xs font-bold shadow-sm transition-colors flex items-center gap-1.5"><Copy className="w-3.5 h-3.5" /> Copy Key</button>
+          </div>
+          
+          <input readOnly value={extractedBulkKey} className="w-full bg-white border border-indigo-200 rounded-lg p-3 font-mono text-sm tracking-wider text-gray-800 shadow-inner outline-none focus:ring-2 focus:ring-indigo-500" />
+          
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 mt-2 pt-4 border-t border-indigo-200">
+             <label className="flex items-center gap-2 text-sm font-bold text-indigo-800 cursor-pointer select-none">
+               <input type="checkbox" checked={syncAnswerKey} onChange={(e) => setSyncAnswerKey(e.target.checked)} className="rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4" />
+               Sync Answer Key to Memory
+             </label>
+             
+             {syncAnswerKey && (
+               <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                 <input type="text" value={syncModule} onChange={e=>setSyncModule(e.target.value)} placeholder="Module N" className="w-24 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none" title="Module Name" />
+                 <input type="text" value={syncSet} onChange={e=>setSyncSet(e.target.value)} placeholder="Set N" className="w-20 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none" title="Set/Variant Number" />
+                 <select value={syncSemester} onChange={e=>setSyncSemester(e.target.value)} className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none bg-white">
+                   <option value="Autumn">Autumn</option>
+                   <option value="Spring">Spring</option>
+                   <option value="Summer">Summer</option>
+                 </select>
+                 <input type="text" value={syncYear} onChange={e=>setSyncYear(e.target.value)} placeholder="Year" className="w-20 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none" title="Year" />
+                 
+                 <button onClick={handleSaveToMemory} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ml-2">💾 Save Key</button>
+               </div>
+             )}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col min-h-[500px]">
         <div className="bg-gray-50 border-b border-gray-200 px-6 py-4 flex justify-between items-center">
@@ -1837,6 +1980,41 @@ function MCQGrader({ t }) {
   const [isNegativeMarking, setIsNegativeMarking] = useState(false);
   const [penalty, setPenalty] = useState(0.33);
 
+  // --- IMPORT FROM SAVED KEYS STATE ---
+  const [savedKeys, setSavedKeys] = useState([]);
+  const [showImportModal, setShowImportModal] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('answer_sheet_saved_keys_v1');
+      if (raw) setSavedKeys(JSON.parse(raw));
+    } catch (e) {
+      console.error("Failed to load saved keys", e);
+    }
+  }, []);
+
+  const handleImportSavedKey = (savedKeyObj) => {
+    const maxQ = savedKeyObj.numQuestions || 30;
+    
+    // Transform saved sets into the grader's required string format
+    const lines = (savedKeyObj.sets || []).map(setObj => {
+      let ansString = '';
+      for (let q = 1; q <= maxQ; q++) {
+        const sel = setObj.answers[q];
+        if (!sel || sel.length === 0) {
+          ansString += '-'; // Treat empty/skipped questions as '-'
+        } else {
+          ansString += sel[0].toUpperCase(); // Grab the primary correct choice
+        }
+      }
+      // Outputs format: "SetName ABCD..."
+      return `${setObj.name} ${ansString}`;
+    });
+
+    setKeysInput(lines.join('\n'));
+    setShowImportModal(false);
+  };
+
   const DIFFICULTY_TOO_HARD = 30; 
   const DIFFICULTY_TOO_EASY = 80;
 
@@ -2327,10 +2505,49 @@ function MCQGrader({ t }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-5 space-y-6">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
+            <div className="bg-gray-100 px-4 py-3 border-b border-gray-200 flex justify-between items-center flex-wrap gap-2">
               <h2 className="font-semibold text-gray-700">{t('grad_step1')}</h2>
+              
+              {/* IMPORT BUTTON */}
+              {savedKeys.length > 0 && (
+                <button 
+                  onClick={() => setShowImportModal(true)}
+                  className="text-xs bg-indigo-100 text-indigo-700 px-2.5 py-1.5 rounded-md font-bold hover:bg-indigo-200 transition-colors flex items-center gap-1"
+                >
+                  📥 Import Saved Key
+                </button>
+              )}
             </div>
+            
+            {/* IMPORT MODAL OVERLAY */}
+            {showImportModal && (
+              <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-20 p-4 flex flex-col overflow-hidden border-b border-gray-200">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="font-bold text-gray-800 text-sm uppercase">Select Key to Import</span>
+                  <button onClick={() => setShowImportModal(false)} className="text-gray-500 hover:text-red-500 font-bold">✕</button>
+                </div>
+                <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                  {savedKeys.map(item => (
+                    <div key={item.id} className="border border-gray-200 rounded p-2 flex justify-between items-center bg-gray-50 hover:bg-indigo-50 transition-colors">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-xs text-gray-800 truncate">{item.title}</div>
+                        <div className="text-[10px] text-gray-500">
+                          {item.year} {item.semester} • Module {item.moduleName} • {item.sets?.length || 0} Sets
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => handleImportSavedKey(item)}
+                        className="ml-2 px-2.5 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded hover:bg-indigo-700 shrink-0"
+                      >
+                        Import
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="p-4">
               <textarea value={keysInput} onChange={(e) => setKeysInput(e.target.value.toUpperCase())} placeholder={`A AAACBCAD\nB BBBCBCAD\nC ABABABAB\n(Type 'V' for a voided question)`} className="w-full h-32 font-mono text-sm p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none" />
             </div>
