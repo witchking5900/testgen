@@ -799,9 +799,135 @@ function AnswerSheetConstructor({ t }) {
     return newAnswers;
   };
 
+  // --- SAVED KEYS & ARCHIVE STATES ---
+  const [saveTitle, setSaveTitle] = useState('');
+  const [saveYear, setSaveYear] = useState('2026');
+  const [saveSemester, setSaveSemester] = useState('Autumn');
+  const [savedKeys, setSavedKeys] = useState(() => {
+    try {
+      const raw = localStorage.getItem('answer_sheet_saved_keys_v1');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [filterYear, setFilterYear] = useState('ALL');
+  const [filterSemester, setFilterSemester] = useState('ALL');
+  const [sortBy, setSortBy] = useState('newest');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSavedList, setShowSavedList] = useState(true);
+
+  const persistSavedKeys = (nextKeys) => {
+    setSavedKeys(nextKeys);
+    try {
+      localStorage.setItem('answer_sheet_saved_keys_v1', JSON.stringify(nextKeys));
+    } catch (err) {
+      console.error('Failed to save keys to localStorage', err);
+    }
+  };
+
+  const handleSaveCurrentKey = () => {
+    const newEntry = {
+      id: Date.now(),
+      title: saveTitle.trim() || `Module ${moduleName || '1'}`,
+      year: saveYear.trim() || '2026',
+      semester: saveSemester,
+      moduleName,
+      numQuestions,
+      numChoices,
+      internalCols,
+      ticketsPerRow,
+      rowsPerPage,
+      fillMode,
+      sets: JSON.parse(JSON.stringify(sets)),
+      updatedAt: new Date().toISOString(),
+    };
+    persistSavedKeys([newEntry, ...savedKeys]);
+    setSaveTitle('');
+  };
+
+  const handleLoadSavedKey = (item) => {
+    setModuleName(item.moduleName ?? '1');
+    setNumQuestions(item.numQuestions ?? 30);
+    setNumChoices(item.numChoices ?? 4);
+    setInternalCols(item.internalCols ?? 2);
+    if (item.ticketsPerRow) setTicketsPerRow(item.ticketsPerRow);
+    if (item.rowsPerPage) setRowsPerPage(item.rowsPerPage);
+    setFillMode(item.fillMode ?? 'cycle');
+    setSets(JSON.parse(JSON.stringify(item.sets || [])));
+    setSaveTitle(item.title || '');
+    setSaveYear(item.year || '2026');
+    setSaveSemester(item.semester || 'Autumn');
+    setIsAnswerKeyMode(true);
+  };
+
+  const handleOverwriteSavedKey = (id) => {
+    const updated = savedKeys.map((item) =>
+      item.id === id
+        ? {
+            ...item,
+            title: saveTitle.trim() || item.title,
+            year: saveYear.trim() || item.year,
+            semester: saveSemester || item.semester,
+            moduleName,
+            numQuestions,
+            numChoices,
+            internalCols,
+            ticketsPerRow,
+            rowsPerPage,
+            fillMode,
+            sets: JSON.parse(JSON.stringify(sets)),
+            updatedAt: new Date().toISOString(),
+          }
+        : item
+    );
+    persistSavedKeys(updated);
+  };
+
+  const handleDeleteSavedKey = (id) => {
+    persistSavedKeys(savedKeys.filter((item) => item.id !== id));
+  };
+
+  const availableYears = useMemo(() => {
+    const yrs = new Set(savedKeys.map((k) => k.year).filter(Boolean));
+    yrs.add('2026');
+    return Array.from(yrs).sort((a, b) => Number(b) - Number(a));
+  }, [savedKeys]);
+
+  const filteredAndSortedKeys = useMemo(() => {
+    return savedKeys
+      .filter((item) => {
+        if (filterYear !== 'ALL' && item.year !== filterYear) return false;
+        if (filterSemester !== 'ALL' && item.semester !== filterSemester) return false;
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const matchTitle = item.title?.toLowerCase().includes(q);
+          const matchMod = String(item.moduleName || '').toLowerCase().includes(q);
+          if (!matchTitle && !matchMod) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'newest') return new Date(b.updatedAt) - new Date(a.updatedAt);
+        if (sortBy === 'oldest') return new Date(a.updatedAt) - new Date(b.updatedAt);
+        if (sortBy === 'year_desc') {
+          if (b.year !== a.year) return Number(b.year) - Number(a.year);
+          return a.semester.localeCompare(b.semester);
+        }
+        if (sortBy === 'title_asc') return (a.title || '').localeCompare(b.title || '');
+        return 0;
+      });
+  }, [savedKeys, filterYear, filterSemester, sortBy, searchQuery]);
+
   const handlePasswordSubmit = (e) => {
     e.preventDefault();
-    if (passwordInput === 'Nimue') {
+    const envPassword =
+      (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ANSWER_KEY_PASSWORD) ||
+      (typeof process !== 'undefined' &&
+        (process.env?.REACT_APP_ANSWER_KEY_PASSWORD ||
+          process.env?.NEXT_PUBLIC_ANSWER_KEY_PASSWORD));
+
+    if (envPassword && passwordInput === envPassword) {
       setIsUnlocked(true);
       setIsAnswerKeyMode(true);
       setShowPasswordPrompt(false);
@@ -1024,13 +1150,6 @@ function AnswerSheetConstructor({ t }) {
                 }}
               >
                 KEY
-              </span>
-            </>
-          ) : useModuleHeaderOnStudentSheet ? (
-            <>
-              <span>{t('sheet_student')} _______________</span>
-              <span>
-                Module {modLabel} - Set {setLabel}
               </span>
             </>
           ) : (
@@ -1414,6 +1533,175 @@ function AnswerSheetConstructor({ t }) {
             >
               + Add Set
             </button>
+          </div>
+
+          {/* SAVE & ARCHIVE BAR */}
+          <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-4 space-y-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1 flex-1 min-w-[180px]">
+                <label className="block text-[11px] font-bold text-gray-600 uppercase">
+                  Key Title / Subject
+                </label>
+                <input
+                  type="text"
+                  value={saveTitle}
+                  onChange={(e) => setSaveTitle(e.target.value)}
+                  placeholder={`e.g. Midterm Exam (Default: Module ${moduleName || '1'})`}
+                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-gray-600 uppercase">
+                  Year
+                </label>
+                <input
+                  type="number"
+                  value={saveYear}
+                  onChange={(e) => setSaveYear(e.target.value)}
+                  placeholder="2026"
+                  className="w-24 px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-semibold bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[11px] font-bold text-gray-600 uppercase">
+                  Semester
+                </label>
+                <select
+                  value={saveSemester}
+                  onChange={(e) => setSaveSemester(e.target.value)}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-semibold bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="Autumn">Autumn Semester</option>
+                  <option value="Spring">Spring Semester</option>
+                  <option value="Summer">Summer Semester</option>
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveCurrentKey}
+                className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors shadow-sm"
+              >
+                💾 Save Key
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowSavedList((prev) => !prev)}
+                className="bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-gray-50 transition-colors"
+              >
+                {showSavedList ? 'Hide' : 'Show'} Saved ({savedKeys.length})
+              </button>
+            </div>
+
+            {/* SAVED KEYS LIST & FILTERS */}
+            {showSavedList && (
+              <div className="border-t border-indigo-100 pt-3 space-y-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-bold text-gray-600 uppercase text-[11px]">Filter & Sort:</span>
+                  <select
+                    value={filterYear}
+                    onChange={(e) => setFilterYear(e.target.value)}
+                    className="px-2.5 py-1 border border-gray-300 rounded-md bg-white text-xs"
+                  >
+                    <option value="ALL">All Years</option>
+                    {availableYears.map((yr) => (
+                      <option key={yr} value={yr}>
+                        {yr}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={filterSemester}
+                    onChange={(e) => setFilterSemester(e.target.value)}
+                    className="px-2.5 py-1 border border-gray-300 rounded-md bg-white text-xs"
+                  >
+                    <option value="ALL">All Semesters</option>
+                    <option value="Autumn">Autumn Semester</option>
+                    <option value="Spring">Spring Semester</option>
+                    <option value="Summer">Summer Semester</option>
+                  </select>
+
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="px-2.5 py-1 border border-gray-300 rounded-md bg-white text-xs"
+                  >
+                    <option value="newest">Sort: Newest First</option>
+                    <option value="oldest">Sort: Oldest First</option>
+                    <option value="year_desc">Sort: Year & Semester</option>
+                    <option value="title_asc">Sort: Title (A-Z)</option>
+                  </select>
+
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search title or module..."
+                    className="ml-auto px-2.5 py-1 border border-gray-300 rounded-md bg-white text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                {filteredAndSortedKeys.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic py-2 text-center">
+                    No saved answer keys match your filter.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">
+                    {filteredAndSortedKeys.map((item) => (
+                      <div
+                        key={item.id}
+                        className="bg-white border border-gray-200 rounded-lg p-2.5 flex items-center justify-between gap-2 shadow-sm"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded text-[10px] font-bold">
+                              {item.year} • {item.semester}
+                            </span>
+                            <span className="font-bold text-xs text-gray-800 truncate">
+                              {item.title}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-gray-500 mt-0.5">
+                            Module {item.moduleName} • {item.sets?.length || 0} Sets •{' '}
+                            {item.numQuestions} Qs
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleLoadSavedKey(item)}
+                            className="px-2.5 py-1 bg-indigo-600 text-white rounded text-xs font-semibold hover:bg-indigo-700"
+                          >
+                            Load
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOverwriteSavedKey(item.id)}
+                            title="Overwrite with current sets/settings"
+                            className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200"
+                          >
+                            Update
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSavedKey(item.id)}
+                            title="Delete saved key"
+                            className="px-2 py-1 text-red-500 hover:bg-red-50 rounded text-xs font-bold"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* SETS LIST */}
