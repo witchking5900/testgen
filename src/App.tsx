@@ -354,17 +354,20 @@ export default function App() {
 
 // --- SUB-COMPONENT 1: TEST GENERATOR ---
 function TestGenerator({ t }) {
-  const [bases, setBases] = useState([{ id: 1, name: 'Base 1', content: [], count: 0, type: 'file' }, { id: 2, name: 'Base 2', content: [], count: 0, type: 'file' }]);
+  const [bases, setBases] = useState([{ id: 1, name: 'Base 1', content: [], count: 0, type: 'file', rules: [] }, { id: 2, name: 'Base 2', content: [], count: 0, type: 'file', rules: [] }]);
   const [generatedTest, setGeneratedTest] = useState([]);
+  const [generationWarnings, setGenerationWarnings] = useState([]);
+  
+  // --- TOGGLES ---
   const [isRandomized, setIsRandomized] = useState(true);
   const [isChoiceRandomized, setIsChoiceRandomized] = useState(true);
   const [showNumbering, setShowNumbering] = useState(true);
+  const [isProMode, setIsProMode] = useState(false);
   
-  // --- NEW STATES FOR KEY EXTRACTION & SYNC ---
+  // --- ANSWER KEY & SYNC STATES ---
   const [removeAsterisks, setRemoveAsterisks] = useState(false);
   const [extractedKey, setExtractedKey] = useState({});
   const [extractedBulkKey, setExtractedBulkKey] = useState('');
-  
   const [syncAnswerKey, setSyncAnswerKey] = useState(false);
   const [syncModule, setSyncModule] = useState('1');
   const [syncSet, setSyncSet] = useState('1');
@@ -385,13 +388,15 @@ function TestGenerator({ t }) {
 
   const resetApp = () => {
     if (window.confirm("Are you sure you want to clear all data and start over?")) {
-      setBases([{ id: 1, name: 'Base 1', content: [], count: 0, type: 'file' }, { id: 2, name: 'Base 2', content: [], count: 0, type: 'file' }]);
+      setBases([{ id: 1, name: 'Base 1', content: [], count: 0, type: 'file', rules: [] }, { id: 2, name: 'Base 2', content: [], count: 0, type: 'file', rules: [] }]);
       setGeneratedTest([]);
+      setGenerationWarnings([]);
       setIsRandomized(true);
       setIsChoiceRandomized(true);
       setShowNumbering(true);
       setRemoveAsterisks(false);
       setExtractedBulkKey('');
+      setIsProMode(false);
     }
   };
 
@@ -404,6 +409,7 @@ function TestGenerator({ t }) {
     return newArr;
   };
 
+  // --- PARSER (WITH TAG EXTRACTION & INVISIBILITY CLOAK) ---
   const parseQuestions = (text) => {
     const lines = text.replace(/\r\n/g, '\n').split('\n');
     const questions = [];
@@ -413,13 +419,22 @@ function TestGenerator({ t }) {
     const saveBlock = (block, type) => {
       let content = block.filter(line => line.trim() !== '').join('\n').trim();
       if (type === 'standard') content = content.replace(/([^\n])\s+([A-Ea-e][\.\)]\s)/g, '$1\n$2');
-      return content;
+      
+      const tags = [];
+      // Extract [Tags] and remove them from the visible text
+      let cleanContent = content.replace(/\[(.*?)\]/g, (match, tag) => {
+        tags.push(tag.trim().toLowerCase());
+        return ''; 
+      }).replace(/^\s+/, '').trim(); 
+
+      return { text: cleanContent, type: type, tags: tags };
     };
 
     lines.forEach(line => {
       const trimmed = line.trim();
-      const isNumStart = /^\s*\d+[\.\)]/.test(line);
-      const isSlashStart = trimmed.startsWith('////');
+      // Match numbering OR tags starting a line
+      const isNumStart = /^\s*(\[.*?\]\s*)*\d+[\.\)]/.test(line);
+      const isSlashStart = trimmed.startsWith('////') || /^\s*(\[.*?\]\s*)*\/\/\//.test(line);
 
       if (isNumStart || isSlashStart) {
         if (currentBlock.length > 0) questions.push(saveBlock(currentBlock, currentBlockType));
@@ -428,7 +443,11 @@ function TestGenerator({ t }) {
           currentBlock = [trimmed]; 
         } else {
           currentBlockType = 'standard';
-          const cleanLine = line.replace(/^\s*\d+[\.\)]\s*/, '');
+          // Clean the number off but keep tags for the saveBlock regex to catch
+          const cleanLine = line.replace(/^(\s*\[.*?\]\s*)*\d+[\.\)]\s*/, (match) => {
+             const tagsOnly = match.match(/\[.*?\]/g);
+             return tagsOnly ? tagsOnly.join(' ') + ' ' : '';
+          });
           currentBlock = [cleanLine];
         }
       } else {
@@ -453,13 +472,12 @@ function TestGenerator({ t }) {
     setBases(prev => prev.map(base => base.id === id ? { ...base, name: fileName, content: questions } : base));
   };
 
-  // Upgraded to extract correct answer keys and handle '*' stripping
-  const processQuestionOptions = (text) => {
+  // --- QUESTION FORMATTERS ---
+  const processStandardQuestion = (text) => {
     const lines = text.split('\n');
     const questionLines = [];
     const choiceLines = [];
 
-    // Parse out choices vs question body
     lines.forEach(line => {
       const trimmed = line.trim();
       if (!trimmed) return;
@@ -472,45 +490,81 @@ function TestGenerator({ t }) {
 
     if (choiceLines.length === 0) return { text: text, answers: [] };
 
-    // Standardize all choices
     const choicesData = choiceLines.map(line => {
       const isCorrect = line.endsWith('*') || line.includes('*');
-      const cleanContent = line
-        .replace(/^[A-Ea-e][\.\)]\s+|^choice\.\s+|^\/\/\/?\s*/, '')
-        .replace(/\*$/, '')
-        .trim();
+      const cleanContent = line.replace(/^[A-Ea-e][\.\)]\s+|^choice\.\s+|^\/\/\/?\s*/, '').replace(/\*$/, '').trim();
       return { content: cleanContent, isCorrect };
     });
 
-    let finalChoices = choicesData;
-    if (isChoiceRandomized) {
-      finalChoices = shuffleArray(choicesData);
-    }
-
+    const finalChoices = isChoiceRandomized ? shuffleArray(choicesData) : choicesData;
     const correctAnswers = [];
+    
     const newChoiceLines = finalChoices.map((item, idx) => {
-      const letter = String.fromCharCode(97 + idx); // 'a', 'b', 'c'...
+      const letter = String.fromCharCode(97 + idx); 
       if (item.isCorrect) correctAnswers.push(letter);
       
-      const prefix = `${letter.toUpperCase()}.`;
-      // Conditionally keep or remove the '*'
       const marker = (!removeAsterisks && item.isCorrect) ? ' *' : '';
-      return `${prefix} ${item.content}${marker}`;
+      return `${letter.toUpperCase()}. ${item.content}${marker}`;
     });
 
-    const cleanQuestion = questionLines.join('\n').trim();
-    const finalText = [cleanQuestion, ...newChoiceLines].join('\n');
-
-    return { text: finalText, answers: correctAnswers };
+    return { text: [questionLines.join('\n').trim(), ...newChoiceLines].join('\n'), answers: correctAnswers };
   };
 
+  const processSlashQuestion = (text) => {
+    const lines = text.split('\n');
+    const questionLines = [];
+    const choiceLines = [];
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return; 
+      if (trimmed.startsWith('///') || trimmed.startsWith('//') && !trimmed.startsWith('////')) choiceLines.push(line);
+      else questionLines.push(line);
+    });
+
+    if (choiceLines.length === 0) return { text: text, answers: null }; // Null answers means ignore in key
+    const finalChoices = isChoiceRandomized ? shuffleArray(choiceLines) : choiceLines;
+    
+    return { text: [questionLines.join('\n').trim(), ...finalChoices].join('\n'), answers: null };
+  };
+
+  // --- GENERATION ENGINE ---
   const generateTest = () => {
     let finalQuestions = [];
+    let newWarnings = [];
+
     bases.forEach(base => {
-      if (base.content.length > 0 && base.count > 0) {
-        const shuffledContent = shuffleArray(base.content);
-        const selected = shuffledContent.slice(0, base.count);
-        finalQuestions = [...finalQuestions, ...selected];
+      if (base.content.length === 0) return;
+
+      if (!isProMode) {
+        // Simple Mode: Pull X random questions from entire base
+        if (base.count > 0) {
+          const shuffledContent = shuffleArray(base.content);
+          finalQuestions = [...finalQuestions, ...shuffledContent.slice(0, base.count)];
+        }
+      } else {
+        // Pro Mode: Evaluate rules with AND logic
+        let availablePool = [...base.content];
+        
+        base.rules.forEach((rule, rIdx) => {
+          if (rule.count <= 0) return;
+
+          // Filter questions that contain ALL tags in the rule
+          const matchingQuestions = availablePool.filter(q => 
+            rule.tags.every(ruleTag => q.tags.includes(ruleTag.toLowerCase()))
+          );
+
+          const shuffled = shuffleArray(matchingQuestions);
+          const selected = shuffled.slice(0, rule.count);
+
+          if (selected.length < rule.count) {
+            newWarnings.push(`Base "${base.name}" (Rule ${rIdx + 1}): Requested ${rule.count} [${rule.tags.join(' + ')}], but only found ${selected.length}.`);
+          }
+
+          finalQuestions = [...finalQuestions, ...selected];
+          // Remove selected questions from available pool to prevent duplicates
+          availablePool = availablePool.filter(q => !selected.includes(q));
+        });
       }
     });
 
@@ -518,76 +572,92 @@ function TestGenerator({ t }) {
     
     const keyObj = {};
     let bulkKeyString = '';
+    let extractedCount = 0;
 
-    // Process each question for shuffling and key extraction
-    const processedQuestions = finalQuestions.map((q, idx) => {
-      const result = processQuestionOptions(q);
+    const processedQuestions = finalQuestions.map((qObj, idx) => {
       const qNum = idx + 1;
-      
-      keyObj[qNum] = result.answers;
-      
-      if (result.answers.length === 0) bulkKeyString += '-';
-      else if (result.answers.length === 1) bulkKeyString += result.answers[0];
-      else bulkKeyString += `(${result.answers.join('')})`;
+      let result;
+
+      if (qObj.type === 'slash') {
+        result = processSlashQuestion(qObj.text);
+      } else {
+        result = processStandardQuestion(qObj.text);
+        
+        // Only map standard paper questions to the extracted answer key
+        keyObj[qNum] = result.answers;
+        extractedCount++;
+        
+        if (result.answers.length === 0) bulkKeyString += '-';
+        else if (result.answers.length === 1) bulkKeyString += result.answers[0];
+        else bulkKeyString += `(${result.answers.join('')})`;
+      }
       
       return result.text;
     });
 
     setGeneratedTest(processedQuestions);
-    setExtractedKey(keyObj);
-    setExtractedBulkKey(bulkKeyString);
+    setGenerationWarnings(newWarnings);
+    
+    // Only save keys if there were actually standard questions processed
+    if (extractedCount > 0) {
+      setExtractedKey(keyObj);
+      setExtractedBulkKey(bulkKeyString);
+    } else {
+      setExtractedKey({});
+      setExtractedBulkKey('');
+    }
   };
 
+  // --- RULE BUILDER HELPERS ---
+  const addRule = (baseId) => {
+    setBases(prev => prev.map(b => b.id === baseId ? { ...b, rules: [...b.rules, { id: Date.now(), tags: [], count: 0 }] } : b));
+  };
+  const removeRule = (baseId, ruleId) => {
+    setBases(prev => prev.map(b => b.id === baseId ? { ...b, rules: b.rules.filter(r => r.id !== ruleId) } : b));
+  };
+  const updateRuleCount = (baseId, ruleId, count) => {
+    setBases(prev => prev.map(b => b.id === baseId ? { ...b, rules: b.rules.map(r => r.id === ruleId ? { ...r, count: parseInt(count) || 0 } : r) } : b));
+  };
+  const addTagToRule = (baseId, ruleId, tag) => {
+    if (!tag) return;
+    setBases(prev => prev.map(b => b.id === baseId ? {
+      ...b, rules: b.rules.map(r => r.id === ruleId ? { ...r, tags: r.tags.includes(tag) ? r.tags : [...r.tags, tag] } : r)
+    } : b));
+  };
+  const removeTagFromRule = (baseId, ruleId, tagToRemove) => {
+    setBases(prev => prev.map(b => b.id === baseId ? {
+      ...b, rules: b.rules.map(r => r.id === ruleId ? { ...r, tags: r.tags.filter(t => t !== tagToRemove) } : r)
+    } : b));
+  };
+
+  const getAvailableTagsForBase = (base) => {
+    const tagSet = new Set();
+    base.content.forEach(q => q.tags.forEach(t => tagSet.add(t)));
+    return Array.from(tagSet).sort();
+  };
+
+  // --- SAVING AND COPYING ---
   const handleSaveToMemory = () => {
-    if (!extractedBulkKey) return alert("No key to save! Generate a test first.");
-    
+    if (!extractedBulkKey) return alert("No key to save! Generate a standard paper test first.");
     try {
       const raw = localStorage.getItem('answer_sheet_saved_keys_v1');
       let savedKeysArchive = raw ? JSON.parse(raw) : [];
-      
-      const newSet = {
-        id: Date.now(),
-        name: syncSet.trim() || '1',
-        answers: extractedKey,
-        bulkText: extractedBulkKey
-      };
-
-      // Check if this module/year/semester combo already exists to merge it
-      const existingIndex = savedKeysArchive.findIndex(k => 
-        k.moduleName === syncModule && 
-        k.year === syncYear && 
-        k.semester === syncSemester
-      );
+      const newSet = { id: Date.now(), name: syncSet.trim() || '1', answers: extractedKey, bulkText: extractedBulkKey };
+      const existingIndex = savedKeysArchive.findIndex(k => k.moduleName === syncModule && k.year === syncYear && k.semester === syncSemester);
 
       if (existingIndex >= 0) {
         savedKeysArchive[existingIndex].sets.push(newSet);
         savedKeysArchive[existingIndex].updatedAt = new Date().toISOString();
       } else {
-        // Create brand new entry
-        const newEntry = {
-          id: Date.now(),
-          title: `Module ${syncModule || '1'}`,
-          year: syncYear.trim() || '2026',
-          semester: syncSemester,
-          moduleName: syncModule,
-          numQuestions: generatedTest.length,
-          numChoices: 4, // Safe default
-          internalCols: 2,
-          ticketsPerRow: 2,
-          rowsPerPage: 5,
-          fillMode: 'cycle',
-          sets: [newSet],
-          updatedAt: new Date().toISOString(),
-        };
-        savedKeysArchive = [newEntry, ...savedKeysArchive];
+        savedKeysArchive = [{
+          id: Date.now(), title: `Module ${syncModule || '1'}`, year: syncYear.trim() || '2026', semester: syncSemester,
+          moduleName: syncModule, numQuestions: Object.keys(extractedKey).length, numChoices: 4, internalCols: 2, ticketsPerRow: 2, rowsPerPage: 5, fillMode: 'cycle',
+          sets: [newSet], updatedAt: new Date().toISOString(),
+        }, ...savedKeysArchive];
       }
-
       localStorage.setItem('answer_sheet_saved_keys_v1', JSON.stringify(savedKeysArchive));
-      alert(`✅ Answer Key saved!\nYou can now load it in the Answer Sheet Constructor or MCQ Grader.`);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to save answer key to memory.");
-    }
+      alert(`✅ Answer Key saved!`);
+    } catch (err) { alert("Failed to save answer key to memory."); }
   };
 
   const copyToClipboard = () => {
@@ -600,36 +670,21 @@ function TestGenerator({ t }) {
     document.body.removeChild(textArea);
   };
 
-  const copyKeyToClipboard = () => {
-    const textArea = document.createElement("textarea");
-    textArea.value = extractedBulkKey;
-    document.body.appendChild(textArea);
-    textArea.select();
-    document.execCommand('copy');
-    document.body.removeChild(textArea);
-    alert("Key copied to clipboard!");
-  };
-
   const handleFileUpload = (event, id) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     if (file.name.endsWith('.docx')) {
       if (!window.mammoth) return alert("Word document parser is loading...");
       const reader = new FileReader();
       reader.onload = (e) => {
         if (e.target?.result) {
-          window.mammoth.extractRawText({ arrayBuffer: e.target.result })
-            .then((result) => processTextContent(result.value, file.name, id))
-            .catch(() => alert("Error reading Word file."));
+          window.mammoth.extractRawText({ arrayBuffer: e.target.result }).then((result) => processTextContent(result.value, file.name, id));
         }
       };
       reader.readAsArrayBuffer(file);
     } else {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        if (typeof e.target?.result === 'string') processTextContent(e.target.result, file.name, id);
-      };
+      reader.onload = (e) => { if (typeof e.target?.result === 'string') processTextContent(e.target.result, file.name, id); };
       reader.readAsText(file);
     }
   };
@@ -645,7 +700,7 @@ function TestGenerator({ t }) {
   const addBase = () => {
     let newNum = bases.length + 1;
     while (bases.some(base => base.name === `Base ${newNum}`)) newNum++;
-    setBases([...bases, { id: Date.now(), name: `Base ${newNum}`, content: [], count: 0, type: 'file' }]);
+    setBases([...bases, { id: Date.now(), name: `Base ${newNum}`, content: [], count: 0, type: 'file', rules: [] }]);
   };
 
   return (
@@ -658,44 +713,89 @@ function TestGenerator({ t }) {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-600" />{t('gen_bases')}</h2>
-          <div className="flex gap-2">
+          <div className="flex gap-4 items-center">
+            <label className="flex items-center gap-2 cursor-pointer bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200">
+               <span className="text-xs font-bold text-gray-700 uppercase">Pro Mode</span>
+               <div className={`w-8 h-5 rounded-full p-1 transition-colors duration-200 ${isProMode ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+                 <div className={`bg-white w-3 h-3 rounded-full shadow-md transform transition-transform duration-200 ${isProMode ? 'translate-x-3' : 'translate-x-0'}`} />
+               </div>
+               <input type="checkbox" checked={isProMode} onChange={() => setIsProMode(!isProMode)} className="hidden" />
+            </label>
             <button onClick={resetApp} className="flex items-center gap-1 text-sm bg-red-50 text-red-700 px-3 py-1.5 rounded-lg font-medium"><RotateCcw className="w-4 h-4" /> {t('gen_reset')}</button>
             <button onClick={addBase} className="flex items-center gap-1 text-sm bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg font-medium"><Plus className="w-4 h-4" /> {t('gen_add')}</button>
           </div>
         </div>
 
-        <div className="space-y-3">
-          {bases.map((base, index) => (
-            <div key={base.id} className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 rounded-lg border border-gray-100 bg-gray-50">
-              <div className="flex-1 w-full sm:w-auto">
-                <div className="flex items-center gap-3">
-                  <span className="bg-white text-gray-500 text-xs font-mono w-6 h-6 flex items-center justify-center rounded border border-gray-200">{index + 1}</span>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900 truncate max-w-[200px]">{base.name}</p>
-                    <div className="flex gap-2 text-xs text-gray-500 mt-1">
-                      <span className={base.content.length > 0 ? "text-green-600" : "text-amber-600"}>{base.content.length} qs</span>
-                      <span>•</span>
-                      <div className="flex gap-2">
-                        <label className="cursor-pointer hover:text-indigo-600 underline">
-                          {t('gen_upload')}
-                          <input type="file" accept=".txt,.docx" className="hidden" onChange={(e) => handleFileUpload(e, base.id)} />
-                        </label>
-                        <span>or</span>
-                        <button onClick={() => { setShowPasteModal(base.id); setPasteText(base.content.join('\n\n')); }} className="hover:text-indigo-600 underline">{t('gen_paste')}</button>
+        <div className="space-y-4">
+          {bases.map((base, index) => {
+            const baseTags = getAvailableTagsForBase(base);
+            
+            return (
+              <div key={base.id} className="flex flex-col gap-4 p-4 rounded-lg border border-gray-200 bg-gray-50">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="bg-white text-gray-500 text-xs font-mono w-6 h-6 flex items-center justify-center rounded border border-gray-200">{index + 1}</span>
+                    <div>
+                      <p className="font-bold text-gray-900">{base.name}</p>
+                      <div className="flex gap-2 text-xs text-gray-500 mt-1">
+                        <span className={base.content.length > 0 ? "text-green-600 font-bold" : "text-amber-600"}>{base.content.length} qs</span>
+                        <span>•</span>
+                        <div className="flex gap-2">
+                          <label className="cursor-pointer hover:text-indigo-600 underline">
+                            {t('gen_upload')}
+                            <input type="file" accept=".txt,.docx" className="hidden" onChange={(e) => handleFileUpload(e, base.id)} />
+                          </label>
+                          <span>or</span>
+                          <button onClick={() => { setShowPasteModal(base.id); setPasteText(base.content.map(q => q.text).join('\n\n')); }} className="hover:text-indigo-600 underline">{t('gen_paste')}</button>
+                        </div>
                       </div>
                     </div>
                   </div>
+
+                  <div className="flex items-center gap-3">
+                    {!isProMode ? (
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm font-bold text-gray-600 uppercase">Amount</label>
+                        <input type="number" min="0" max={base.content.length} value={base.count} onChange={(e) => setBases(bases.map(b => b.id === base.id ? { ...b, count: parseInt(e.target.value) || 0 } : b))} className="w-20 px-3 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none text-center font-bold" />
+                      </div>
+                    ) : (
+                      <span className="text-xs font-bold text-indigo-600 bg-indigo-100 px-2.5 py-1 rounded-md">{base.rules.length} Rules Active</span>
+                    )}
+                    <button onClick={() => setBases(bases.filter(b => b.id !== base.id))} className="p-2 text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+                  </div>
                 </div>
+
+                {isProMode && (
+                  <div className="bg-white border border-indigo-100 rounded-lg p-4 space-y-3 shadow-sm">
+                    {base.rules.map((rule, rIdx) => (
+                      <div key={rule.id} className="flex flex-wrap items-center gap-3 p-2 bg-indigo-50/50 rounded border border-indigo-50">
+                        <span className="text-xs font-bold text-indigo-400 uppercase">Rule {rIdx + 1}</span>
+                        
+                        <div className="flex flex-wrap gap-1.5 items-center bg-white border border-gray-200 p-1.5 rounded-md min-h-[36px] min-w-[200px]">
+                          {rule.tags.map(tag => (
+                            <span key={tag} className="bg-indigo-100 text-indigo-800 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1">
+                              {tag} <button onClick={() => removeTagFromRule(base.id, rule.id, tag)} className="hover:text-red-500">✕</button>
+                            </span>
+                          ))}
+                          <select onChange={(e) => { addTagToRule(base.id, rule.id, e.target.value); e.target.value = ''; }} className="text-xs bg-transparent outline-none text-gray-500 cursor-pointer">
+                            <option value="">+ Add Tag (AND)</option>
+                            {baseTags.filter(t => !rule.tags.includes(t)).map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+
+                        <div className="flex items-center gap-2 ml-auto">
+                           <span className="text-xs font-bold text-gray-500">➔ PULL</span>
+                           <input type="number" min="0" value={rule.count} onChange={(e) => updateRuleCount(base.id, rule.id, e.target.value)} className="w-16 px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 outline-none text-center text-sm font-bold" />
+                           <button onClick={() => removeRule(base.id, rule.id)} className="text-gray-400 hover:text-red-500 p-1"><X className="w-4 h-4" /></button>
+                        </div>
+                      </div>
+                    ))}
+                    <button onClick={() => addRule(base.id)} className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1">+ Add Filter Rule</button>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-gray-600 whitespace-nowrap">{t('gen_amount')}</label>
-                  <input type="number" min="0" max={base.content.length} value={base.count} onChange={(e) => setBases(bases.map(b => b.id === base.id ? { ...b, count: parseInt(e.target.value) || 0 } : b))} className="w-20 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 outline-none text-center" />
-                </div>
-                <button onClick={() => setBases(bases.filter(b => b.id !== base.id))} className="p-2 text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {bases.length === 0 && <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">{t('gen_empty')}</div>}
         </div>
       </div>
@@ -724,7 +824,6 @@ function TestGenerator({ t }) {
             <span className="text-sm font-medium text-gray-700 uppercase tracking-wide flex items-center gap-2"><Hash className="w-4 h-4" /> {t('gen_numbering')}</span>
           </label>
           
-          {/* NEW: EXTRACT KEY & HIDE * TOGGLE */}
           <label className="flex items-center gap-3 cursor-pointer select-none bg-indigo-50 px-4 py-2 rounded-lg border border-indigo-200 shadow-sm">
             <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ${removeAsterisks ? 'bg-indigo-600' : 'bg-indigo-200'}`}>
               <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${removeAsterisks ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -737,12 +836,22 @@ function TestGenerator({ t }) {
         <button onClick={generateTest} className="w-full sm:w-auto bg-indigo-600 text-white px-8 py-3 rounded-lg shadow-md font-semibold flex items-center justify-center gap-2"><RefreshCw className="w-5 h-5" /> {t('gen_btn')}</button>
       </div>
 
-      {/* NEW: SYNC AND VIEW EXTRACTED KEY PANEL */}
-      {removeAsterisks && generatedTest.length > 0 && (
+      {generationWarnings.length > 0 && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded shadow-sm">
+          <div className="flex items-center gap-2 text-yellow-800 font-bold mb-2">
+            <AlertCircle className="w-5 h-5" /> <span>Generation Warnings: Shortage of Questions</span>
+          </div>
+          <ul className="list-disc list-inside text-sm text-yellow-900 space-y-1 ml-2">
+            {generationWarnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {removeAsterisks && extractedBulkKey && (
         <div className="bg-indigo-50/50 border border-indigo-200 rounded-xl p-6 flex flex-col gap-4 shadow-sm animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center justify-between">
-             <h3 className="font-bold text-indigo-900 flex items-center gap-2">🔑 Answer Key Extracted (Ready for Sheets/Grading)</h3>
-             <button onClick={copyKeyToClipboard} className="bg-white hover:bg-gray-50 text-indigo-700 px-3 py-1.5 rounded-lg border border-indigo-200 text-xs font-bold shadow-sm transition-colors flex items-center gap-1.5"><Copy className="w-3.5 h-3.5" /> Copy Key</button>
+             <h3 className="font-bold text-indigo-900 flex items-center gap-2">🔑 Answer Key Extracted (Paper Exams Only)</h3>
+             <button onClick={() => { const ta = document.createElement('textarea'); ta.value = extractedBulkKey; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); alert('Copied!'); }} className="bg-white hover:bg-gray-50 text-indigo-700 px-3 py-1.5 rounded-lg border border-indigo-200 text-xs font-bold shadow-sm transition-colors flex items-center gap-1.5"><Copy className="w-3.5 h-3.5" /> Copy Key</button>
           </div>
           
           <input readOnly value={extractedBulkKey} className="w-full bg-white border border-indigo-200 rounded-lg p-3 font-mono text-sm tracking-wider text-gray-800 shadow-inner outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -1854,19 +1963,53 @@ function AnswerSheetConstructor({ t }) {
             )}
           </div>
 
-          {/* SETS LIST */}
+          {/* SETS LIST WITH PSYCHOMETRIC ANALYSIS */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {sets.map((s) => {
               const answeredCount = Object.keys(s.answers).filter(
                 (q) => Number(q) <= numQuestions && s.answers[q]?.length > 0
               ).length;
 
+              // --- PSYCHOMETRIC PATTERN ANALYSIS ---
+              const flags = [];
+              const cleanStr = (s.bulkText || '').replace(/[^a-zA-Z]/g, '').toLowerCase();
+              const filteredStr = cleanStr.split('').filter(c => choices.includes(c)).join('');
+              const totalAns = filteredStr.length;
+
+              if (totalAns > 0) {
+                // 1. Long Streaks (4+ of the exact same letter)
+                const streakMatch = filteredStr.match(/([a-z])\1{3,}/i);
+                if (streakMatch) flags.push(`Streak: 4+ '${streakMatch[1].toUpperCase()}'s in a row`);
+
+                // 2. Rhythm/Sequences (3+ repetitions of an alternating pattern like ABABAB or ABCDABCD)
+                const rhythmMatch = filteredStr.match(/((?!([a-z])\2+).{2,4}?)\1{2,}/i);
+                if (rhythmMatch) flags.push(`Pattern: Repeating rhythm '${rhythmMatch[1].toUpperCase()}'`);
+
+                // Distribution metrics only kick in at 10+ questions to avoid false positives on tiny quizzes
+                if (totalAns >= 10) {
+                  choices.forEach(c => {
+                    const count = filteredStr.split(c).length - 1;
+                    const pct = (count / totalAns) * 100;
+                    
+                    // 3. Severe Imbalance (Too rare or too frequent)
+                    if (pct < 15) flags.push(`Rare: '${c.toUpperCase()}' is only ${Math.round(pct)}% of answers`);
+                    if (pct > 35) flags.push(`Overused: '${c.toUpperCase()}' makes up ${Math.round(pct)}% of answers`);
+                    
+                    // 4. Desert Gaps (10+ questions without seeing this letter)
+                    if (new RegExp(`[^${c}]{10,}`, 'i').test(filteredStr)) {
+                      flags.push(`Desert: 10+ question gap without an '${c.toUpperCase()}'`);
+                    }
+                  });
+                }
+              }
+              const uniqueFlags = [...new Set(flags)];
+
               return (
                 <div
                   key={s.id}
-                  className="border border-gray-200 rounded-lg p-3 bg-gray-50 flex flex-col gap-2"
+                  className="border border-gray-200 rounded-lg p-3 bg-gray-50 flex flex-col gap-2 relative"
                 >
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold text-gray-500 uppercase">
                         Module {moduleName || '_'} - Set
@@ -1880,6 +2023,11 @@ function AnswerSheetConstructor({ t }) {
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {uniqueFlags.length === 0 && totalAns >= 10 ? (
+                        <span className="text-[10px] font-bold text-green-700 bg-green-100 px-1.5 py-0.5 rounded border border-green-200 shadow-sm" title="Good Key Health: Balanced distribution with no predictable patterns">
+                          ✓ Healthy Key
+                        </span>
+                      ) : null}
                       <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
                         {answeredCount} / {numQuestions} answered
                       </span>
@@ -1909,8 +2057,23 @@ function AnswerSheetConstructor({ t }) {
                     value={s.bulkText}
                     onChange={(e) => handleBulkTextChange(s.id, e.target.value)}
                     placeholder={`Type e.g. "abcdab..." or "1a 2b 3c..." (use "-" to skip)`}
-                    className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-xs font-mono bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className={`w-full px-3 py-1.5 border rounded-md text-xs font-mono bg-white outline-none focus:ring-2 transition-colors ${
+                      uniqueFlags.length > 0 && totalAns > 0
+                        ? 'border-yellow-400 focus:ring-yellow-400' 
+                        : 'border-gray-300 focus:ring-indigo-500'
+                    }`}
                   />
+                  
+                  {uniqueFlags.length > 0 && totalAns > 0 && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded p-2 text-[10px] text-yellow-800 leading-tight">
+                      <strong className="block mb-1">⚠️ Psychometric Red Flags Detected:</strong>
+                      <ul className="list-disc list-inside space-y-0.5 font-medium">
+                        {uniqueFlags.map((flag, idx) => (
+                          <li key={idx}>{flag}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               );
             })}
