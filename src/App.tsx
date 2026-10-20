@@ -46,6 +46,7 @@ const TRANSLATIONS = {
     sheet_btn_copy: "Copy",
     sheet_btn_print: "Print",
     sheet_student: "Student:",
+    sheet_module: "Module:",
     sheet_group: "Group:",
     sheet_ans: "answer",
     sheet_recommended: "⭐ Rec.",
@@ -199,7 +200,8 @@ const TRANSLATIONS = {
     sheet_btn_copy: "კოპირება",
     sheet_btn_print: "ბეჭდვა",
     sheet_student: "სტუდენტი:",
-    sheet_group: "ჯგუფი:",
+    sheet_group: "ჯგ:",
+    sheet_module: "მოდული:",
     sheet_ans: "პასუხი",
     sheet_recommended: "⭐ რეკომენდ.",
     sheet_font: "შრიფტი",
@@ -1435,13 +1437,14 @@ function AnswerSheetConstructor({ t }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: `${Math.max(10, layout.fontSizePx)}px`, marginBottom: '2mm', fontWeight: 'bold', fontFamily: 'serif', gap: '2mm', whiteSpace: 'nowrap' }}>
           {isAnswerKeyMode ? (
             <>
-              <span>Module {modLabel} - Set {setLabel}</span>
+              <span>{t('sheet_module')} {modLabel} - Set {setLabel}</span>
               <span style={{ fontSize: `${Math.max(8, layout.fontSizePx * 0.85)}px`, border: '1px solid #000', padding: '0 3px' }}>KEY</span>
             </>
           ) : (
             <>
-              <span>{t('sheet_student')} ______________________</span>
-              <span>Module {useModuleHeaderOnStudentSheet ? `${modLabel} - Set ${setLabel}` : '____ - Set ____'}</span>
+              <span>{t('sheet_student')} ______________</span>
+              <span>{t('sheet_module')} _______</span>
+              <span>{t('sheet_group')} _______</span>
             </>
           )}
         </div>
@@ -1626,11 +1629,6 @@ function AnswerSheetConstructor({ t }) {
                 <option value="once">1 Ticket per Set only</option>
               </select>
             </div>
-            {!isAnswerKeyMode && (
-              <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
-                <input type="checkbox" checked={useModuleHeaderOnStudentSheet} onChange={(e) => setUseModuleHeaderOnStudentSheet(e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /> Show "Module N - Set N" on Student Blank Sheets
-              </label>
-            )}
             <button type="button" onClick={addSet} className="ml-auto bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors">+ Add Set</button>
           </div>
 
