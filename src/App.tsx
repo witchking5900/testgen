@@ -1,6 +1,7 @@
 // @ts-nocheck
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle, BarChart, Activity, Globe, Slash, Hash, BookOpen } from 'lucide-react';
+import { supabase } from './supabaseClient';
 
 // --- TRANSLATION DICTIONARY ---
 const TRANSLATIONS = {
@@ -928,7 +929,7 @@ function TestGenerator({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR ---
+// --- SUB-COMPONENT 2: ANSWER SHEET CONSTRUCTOR (CLOUD & SHARING ENABLED) ---
 function AnswerSheetConstructor({ t }) {
   const [numQuestions, setNumQuestions] = useState(30);
   const [numChoices, setNumChoices] = useState(4);
@@ -937,12 +938,27 @@ function AnswerSheetConstructor({ t }) {
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const sheetRef = useRef(null);
 
-  // --- PASSWORD & ANSWER KEY STATES ---
+  // --- SUPABASE AUTH & CLOUD STATES ---
+  const [user, setUser] = useState(null);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
-  const [passwordError, setPasswordError] = useState(false);
+  const [authError, setAuthError] = useState('');
 
+  // --- CLOUD ARCHIVE STATES ---
+  const [saveTitle, setSaveTitle] = useState('');
+  const [saveYear, setSaveYear] = useState(new Date().getFullYear().toString());
+  const [saveSemester, setSaveSemester] = useState('Autumn');
+  const [savedKeys, setSavedKeys] = useState([]);
+  const [filterYear, setFilterYear] = useState('ALL');
+  const [filterSemester, setFilterSemester] = useState('ALL');
+  const [sortBy, setSortBy] = useState('newest');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSavedList, setShowSavedList] = useState(true);
+  const [importCode, setImportCode] = useState('');
+
+  // --- EDITOR STATES ---
   const [isAnswerKeyMode, setIsAnswerKeyMode] = useState(false);
   const [moduleName, setModuleName] = useState('1');
   const [useModuleHeaderOnStudentSheet, setUseModuleHeaderOnStudentSheet] = useState(true);
@@ -957,72 +973,217 @@ function AnswerSheetConstructor({ t }) {
     [numChoices]
   );
 
-  // Convert answers object { 1: ['a'], 2: ['c'] } -> compact string for bulk input
+  // --- SUPABASE SESSION MANAGEMENT ---
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        setIsUnlocked(true);
+        setIsAnswerKeyMode(true);
+        fetchCloudKeys(session.user.id);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+      if (session?.user) {
+        fetchCloudKeys(session.user.id);
+      } else {
+        setSavedKeys([]);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLoginSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: emailInput,
+      password: passwordInput,
+    });
+
+    if (error) {
+      setAuthError(error.message);
+    } else {
+      setIsUnlocked(true);
+      setIsAnswerKeyMode(true);
+      setShowPasswordPrompt(false);
+      setPasswordInput('');
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setIsUnlocked(false);
+    setIsAnswerKeyMode(false);
+    setShowPasswordPrompt(false);
+  };
+
+  // --- SUPABASE CLOUD DATABASE FUNCTIONS ---
+  const fetchCloudKeys = async (userId) => {
+    const { data, error } = await supabase
+      .from('answer_keys')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+    if (data) setSavedKeys(data);
+  };
+
+  const handleSaveCurrentKey = async () => {
+    if (!user) return alert("You must be logged in to save.");
+    const newEntry = {
+      user_id: user.id,
+      title: saveTitle.trim() || `Module ${moduleName || '1'}`,
+      year: saveYear.trim() || new Date().getFullYear().toString(),
+      semester: saveSemester,
+      module_name: moduleName,
+      num_questions: numQuestions,
+      num_choices: numChoices,
+      internal_cols: internalCols,
+      tickets_per_row: ticketsPerRow,
+      rows_per_page: rowsPerPage,
+      fill_mode: fillMode,
+      sets: sets,
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase.from('answer_keys').insert([newEntry]);
+    if (error) {
+      console.error(error);
+      alert("Failed to save key to cloud.");
+    } else {
+      setSaveTitle('');
+      fetchCloudKeys(user.id);
+    }
+  };
+
+  const handleOverwriteCloudKey = async (id) => {
+    if (!window.confirm("Overwrite this cloud key with current settings?")) return;
+    const updateData = {
+      title: saveTitle.trim() || undefined,
+      year: saveYear.trim() || undefined,
+      semester: saveSemester,
+      module_name: moduleName,
+      num_questions: numQuestions,
+      num_choices: numChoices,
+      internal_cols: internalCols,
+      tickets_per_row: ticketsPerRow,
+      rows_per_page: rowsPerPage,
+      fill_mode: fillMode,
+      sets: sets,
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase.from('answer_keys').update(updateData).eq('id', id);
+    if (!error) fetchCloudKeys(user.id);
+  };
+
+  const handleDeleteCloudKey = async (id) => {
+    if (window.confirm("Delete this answer key permanently from the cloud?")) {
+      const { error } = await supabase.from('answer_keys').delete().eq('id', id);
+      if (!error) fetchCloudKeys(user.id);
+    }
+  };
+
+  const handleGenerateShareCode = async (id) => {
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const { error } = await supabase.from('answer_keys').update({ share_code: code }).eq('id', id);
+    if (error) alert("Failed to generate share code.");
+    else fetchCloudKeys(user.id);
+  };
+
+  const handleImportSharedKey = async () => {
+    if (!importCode.trim()) return;
+    const cleanCode = importCode.trim().toUpperCase();
+    
+    // 1. Fetch the shared key
+    const { data, error } = await supabase.from('answer_keys').select('*').eq('share_code', cleanCode).single();
+    if (error || !data) return alert("Invalid or missing share code.");
+
+    // 2. Clone it to the current user's account
+    const { id, user_id, share_code, created_at, updated_at, ...keyData } = data;
+    keyData.user_id = user.id;
+    keyData.title = keyData.title + " (Shared)";
+
+    const { error: insertError } = await supabase.from('answer_keys').insert([keyData]);
+    if (insertError) {
+      alert("Failed to import shared key.");
+    } else {
+      alert(`Successfully imported "${keyData.title}"!`);
+      setImportCode('');
+      fetchCloudKeys(user.id);
+    }
+  };
+
+  const handleLoadCloudKey = (item) => {
+    setModuleName(item.module_name ?? '1');
+    setNumQuestions(item.num_questions ?? 30);
+    setNumChoices(item.num_choices ?? 4);
+    setInternalCols(item.internal_cols ?? 2);
+    if (item.tickets_per_row) setTicketsPerRow(item.tickets_per_row);
+    if (item.rows_per_page) setRowsPerPage(item.rows_per_page);
+    setFillMode(item.fill_mode ?? 'cycle');
+    
+    // Ensure bulkText is restored for each set so input boxes populate correctly
+    const restoredSets = (item.sets || []).map((s) => ({
+      ...s,
+      bulkText: s.bulkText || answersToBulkString(s.answers || {}, item.num_questions ?? 30),
+    }));
+    setSets(restoredSets);
+
+    setSaveTitle(item.title || '');
+    setSaveYear(item.year || new Date().getFullYear().toString());
+    setSaveSemester(item.semester || 'Autumn');
+    setIsAnswerKeyMode(true);
+  };
+
+  // --- UTILS (Bulk Parsers & Click Handlers) ---
   const answersToBulkString = (answersObj, maxQ) => {
-    const answeredNums = Object.keys(answersObj)
-      .map(Number)
-      .filter((n) => n <= maxQ && answersObj[n]?.length > 0);
+    const answeredNums = Object.keys(answersObj).map(Number).filter((n) => n <= maxQ && answersObj[n]?.length > 0);
     if (answeredNums.length === 0) return '';
     const highestQ = Math.max(...answeredNums);
     const parts = [];
     for (let q = 1; q <= highestQ; q++) {
       const sel = answersObj[q];
-      if (!sel || sel.length === 0) {
-        parts.push('-');
-      } else if (sel.length === 1) {
-        parts.push(sel[0]);
-      } else {
-        parts.push(`(${sel.join('')})`);
-      }
+      if (!sel || sel.length === 0) parts.push('-');
+      else if (sel.length === 1) parts.push(sel[0]);
+      else parts.push(`(${sel.join('')})`);
     }
     return parts.join('');
   };
 
-  // Parse bulk text (supports "abcd...", "1a 2b 3c", "1.a, 2.b", "a, b, c, d")
   const parseBulkString = (text, maxQ, validChoices) => {
     const trimmed = text.trim();
     if (!trimmed) return {};
     const validSet = new Set(validChoices.map((c) => c.toLowerCase()));
     const newAnswers = {};
 
-    // Case 1: Explicit numbered pairs like "1a 2b 3c" or "1. a, 2: bc"
     if (/\d/.test(trimmed)) {
       const regex = /(\d+)\s*[.:=-]?\s*([a-zA-Z]+)/g;
       let match;
       while ((match = regex.exec(trimmed)) !== null) {
         const qNum = parseInt(match[1], 10);
         if (qNum >= 1 && qNum <= maxQ) {
-          const letters = match[2]
-            .toLowerCase()
-            .split('')
-            .filter((ch) => validSet.has(ch));
-          if (letters.length > 0) {
-            newAnswers[qNum] = Array.from(new Set(letters));
-          }
+          const letters = match[2].toLowerCase().split('').filter((ch) => validSet.has(ch));
+          if (letters.length > 0) newAnswers[qNum] = Array.from(new Set(letters));
         }
       }
       return newAnswers;
     }
 
-    // Case 2: Space/comma separated tokens like "a, b, c, d" or "a b c d"
     if (/[\s,;]+/.test(trimmed)) {
       const tokens = trimmed.split(/[\s,;]+/);
       tokens.forEach((tok, idx) => {
         const qNum = idx + 1;
         if (qNum <= maxQ && tok !== '-' && tok !== '_') {
-          const letters = tok
-            .toLowerCase()
-            .split('')
-            .filter((ch) => validSet.has(ch));
-          if (letters.length > 0) {
-            newAnswers[qNum] = Array.from(new Set(letters));
-          }
+          const letters = tok.toLowerCase().split('').filter((ch) => validSet.has(ch));
+          if (letters.length > 0) newAnswers[qNum] = Array.from(new Set(letters));
         }
       });
       return newAnswers;
     }
 
-    // Case 3: Continuous string like "abcd-ab(cd)a"
     let qNum = 1;
     let i = 0;
     while (i < trimmed.length && qNum <= maxQ) {
@@ -1030,20 +1191,13 @@ function AnswerSheetConstructor({ t }) {
       if (ch === '(') {
         const closeIdx = trimmed.indexOf(')', i);
         const group = closeIdx !== -1 ? trimmed.slice(i + 1, closeIdx) : trimmed.slice(i + 1);
-        const letters = group
-          .toLowerCase()
-          .split('')
-          .filter((c) => validSet.has(c));
-        if (letters.length > 0) {
-          newAnswers[qNum] = Array.from(new Set(letters));
-        }
+        const letters = group.toLowerCase().split('').filter((c) => validSet.has(c));
+        if (letters.length > 0) newAnswers[qNum] = Array.from(new Set(letters));
         qNum++;
         i = closeIdx !== -1 ? closeIdx + 1 : trimmed.length;
       } else {
         const lower = ch.toLowerCase();
-        if (validSet.has(lower)) {
-          newAnswers[qNum] = [lower];
-        }
+        if (validSet.has(lower)) newAnswers[qNum] = [lower];
         qNum++;
         i++;
       }
@@ -1051,192 +1205,15 @@ function AnswerSheetConstructor({ t }) {
     return newAnswers;
   };
 
-  // --- SAVED KEYS & ARCHIVE STATES ---
-  const [saveTitle, setSaveTitle] = useState('');
-  const [saveYear, setSaveYear] = useState('2026');
-  const [saveSemester, setSaveSemester] = useState('Autumn');
-  const [savedKeys, setSavedKeys] = useState(() => {
-    try {
-      const raw = localStorage.getItem('answer_sheet_saved_keys_v1');
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [filterYear, setFilterYear] = useState('ALL');
-  const [filterSemester, setFilterSemester] = useState('ALL');
-  const [sortBy, setSortBy] = useState('newest');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSavedList, setShowSavedList] = useState(true);
-
-  const persistSavedKeys = (nextKeys) => {
-    setSavedKeys(nextKeys);
-    try {
-      localStorage.setItem('answer_sheet_saved_keys_v1', JSON.stringify(nextKeys));
-    } catch (err) {
-      console.error('Failed to save keys to localStorage', err);
-    }
-  };
-
-  const handleSaveCurrentKey = () => {
-    const newEntry = {
-      id: Date.now(),
-      title: saveTitle.trim() || `Module ${moduleName || '1'}`,
-      year: saveYear.trim() || '2026',
-      semester: saveSemester,
-      moduleName,
-      numQuestions,
-      numChoices,
-      internalCols,
-      ticketsPerRow,
-      rowsPerPage,
-      fillMode,
-      sets: JSON.parse(JSON.stringify(sets)),
-      updatedAt: new Date().toISOString(),
-    };
-    persistSavedKeys([newEntry, ...savedKeys]);
-    setSaveTitle('');
-  };
-
-  const handleLoadSavedKey = (item) => {
-    setModuleName(item.moduleName ?? '1');
-    setNumQuestions(item.numQuestions ?? 30);
-    setNumChoices(item.numChoices ?? 4);
-    setInternalCols(item.internalCols ?? 2);
-    if (item.ticketsPerRow) setTicketsPerRow(item.ticketsPerRow);
-    if (item.rowsPerPage) setRowsPerPage(item.rowsPerPage);
-    setFillMode(item.fillMode ?? 'cycle');
-    
-    // Ensure bulkText is restored for each set so input boxes populate correctly
-    const restoredSets = (item.sets || []).map((s) => ({
-      ...s,
-      bulkText: s.bulkText || answersToBulkString(s.answers || {}, item.numQuestions ?? 30),
-    }));
-    setSets(restoredSets);
-
-    setSaveTitle(item.title || '');
-    setSaveYear(item.year || '2026');
-    setSaveSemester(item.semester || 'Autumn');
-    setIsAnswerKeyMode(true);
-  };
-
-  const handleOverwriteSavedKey = (id) => {
-    const updated = savedKeys.map((item) =>
-      item.id === id
-        ? {
-            ...item,
-            title: saveTitle.trim() || item.title,
-            year: saveYear.trim() || item.year,
-            semester: saveSemester || item.semester,
-            moduleName,
-            numQuestions,
-            numChoices,
-            internalCols,
-            ticketsPerRow,
-            rowsPerPage,
-            fillMode,
-            sets: JSON.parse(JSON.stringify(sets)),
-            updatedAt: new Date().toISOString(),
-          }
-        : item
-    );
-    persistSavedKeys(updated);
-  };
-
-  const handleDeleteSavedKey = (id) => {
-    persistSavedKeys(savedKeys.filter((item) => item.id !== id));
-  };
-
-  const availableYears = useMemo(() => {
-    const yrs = new Set(savedKeys.map((k) => k.year).filter(Boolean));
-    yrs.add('2026');
-    return Array.from(yrs).sort((a, b) => Number(b) - Number(a));
-  }, [savedKeys]);
-
-  const filteredAndSortedKeys = useMemo(() => {
-    return savedKeys
-      .filter((item) => {
-        if (filterYear !== 'ALL' && item.year !== filterYear) return false;
-        if (filterSemester !== 'ALL' && item.semester !== filterSemester) return false;
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase();
-          const matchTitle = item.title?.toLowerCase().includes(q);
-          const matchMod = String(item.moduleName || '').toLowerCase().includes(q);
-          if (!matchTitle && !matchMod) return false;
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        if (sortBy === 'newest') return new Date(b.updatedAt) - new Date(a.updatedAt);
-        if (sortBy === 'oldest') return new Date(a.updatedAt) - new Date(b.updatedAt);
-        if (sortBy === 'year_desc') {
-          if (b.year !== a.year) return Number(b.year) - Number(a.year);
-          return a.semester.localeCompare(b.semester);
-        }
-        if (sortBy === 'title_asc') return (a.title || '').localeCompare(b.title || '');
-        return 0;
-      });
-  }, [savedKeys, filterYear, filterSemester, sortBy, searchQuery]);
-
-  const handlePasswordSubmit = (e) => {
-    e.preventDefault();
-    const envPassword =
-      (typeof import.meta !== 'undefined' && import.meta.env?.VITE_ANSWER_KEY_PASSWORD) ||
-      (typeof process !== 'undefined' &&
-        (process.env?.REACT_APP_ANSWER_KEY_PASSWORD ||
-          process.env?.NEXT_PUBLIC_ANSWER_KEY_PASSWORD));
-
-    if (envPassword && passwordInput === envPassword) {
-      setIsUnlocked(true);
-      setIsAnswerKeyMode(true);
-      setShowPasswordPrompt(false);
-      setPasswordInput('');
-      setPasswordError(false);
-    } else {
-      setPasswordError(true);
-    }
-  };
-
-  const handleLock = () => {
-    setIsUnlocked(false);
-    setIsAnswerKeyMode(false);
-    setShowPasswordPrompt(false);
-    setPasswordInput('');
-  };
-
-  const addSet = () => {
-    setSets((prev) => {
-      const nextNum = prev.length + 1;
-      return [
-        ...prev,
-        { id: Date.now(), name: String(nextNum), answers: {}, bulkText: '' },
-      ];
-    });
-  };
-
-  const removeSet = (id) => {
-    if (sets.length <= 1) return;
-    setSets((prev) => prev.filter((s) => s.id !== id));
-  };
-
-  const updateSetName = (id, newName) => {
-    setSets((prev) => prev.map((s) => (s.id === id ? { ...s, name: newName } : s)));
-  };
-
+  const addSet = () => setSets((prev) => [...prev, { id: Date.now(), name: String(prev.length + 1), answers: {}, bulkText: '' }]);
+  const removeSet = (id) => { if (sets.length > 1) setSets((prev) => prev.filter((s) => s.id !== id)); };
+  const updateSetName = (id, newName) => setSets((prev) => prev.map((s) => (s.id === id ? { ...s, name: newName } : s)));
   const handleBulkTextChange = (id, text) => {
     const parsed = parseBulkString(text, numQuestions, choices);
-    setSets((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, bulkText: text, answers: parsed } : s))
-    );
+    setSets((prev) => prev.map((s) => (s.id === id ? { ...s, bulkText: text, answers: parsed } : s)));
   };
+  const clearSetAnswers = (id) => setSets((prev) => prev.map((s) => (s.id === id ? { ...s, answers: {}, bulkText: '' } : s)));
 
-  const clearSetAnswers = (id) => {
-    setSets((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, answers: {}, bulkText: '' } : s))
-    );
-  };
-
-  // Interactive cell click handler (toggles choice for that question in the given set)
   const toggleCellAnswer = (setId, qNum, choice, shiftKey = false) => {
     if (!isUnlocked || !isAnswerKeyMode || !qNum) return;
     setSets((prev) =>
@@ -1245,53 +1222,26 @@ function AnswerSheetConstructor({ t }) {
         const current = s.answers[qNum] || [];
         let updated;
         if (shiftKey) {
-          // Shift+click allows multiple correct choices for the same question
-          updated = current.includes(choice)
-            ? current.filter((c) => c !== choice)
-            : [...current, choice].sort();
+          updated = current.includes(choice) ? current.filter((c) => c !== choice) : [...current, choice].sort();
         } else {
-          // Normal click sets single choice or clears if already selected
           updated = current.length === 1 && current[0] === choice ? [] : [choice];
         }
         const nextAnswers = { ...s.answers };
-        if (updated.length === 0) {
-          delete nextAnswers[qNum];
-        } else {
-          nextAnswers[qNum] = updated;
-        }
-        return {
-          ...s,
-          answers: nextAnswers,
-          bulkText: answersToBulkString(nextAnswers, numQuestions),
-        };
+        if (updated.length === 0) delete nextAnswers[qNum];
+        else nextAnswers[qNum] = updated;
+        return { ...s, answers: nextAnswers, bulkText: answersToBulkString(nextAnswers, numQuestions) };
       })
     );
   };
 
+  // --- LAYOUT COMPUTATIONS ---
   const recommendations = useMemo(() => {
-    const USABLE_W_MM = 200;
-    const USABLE_H_MM = 287;
-
-    const NUM_W = 8;
-    const CHOICE_W = 7;
-    const COL_GAP = 3;
-    const TICKET_PAD = 4;
-    const HEADER_AND_PADDING_MM = 12;
-
-    const ticketW =
-      internalCols * (NUM_W + numChoices * CHOICE_W) +
-      (internalCols - 1) * COL_GAP +
-      TICKET_PAD;
+    const USABLE_W_MM = 200, USABLE_H_MM = 287, NUM_W = 8, CHOICE_W = 7, COL_GAP = 3, TICKET_PAD = 4, HEADER_AND_PADDING_MM = 12;
+    const ticketW = internalCols * (NUM_W + numChoices * CHOICE_W) + (internalCols - 1) * COL_GAP + TICKET_PAD;
     const recCols = Math.max(1, Math.floor(USABLE_W_MM / ticketW));
-
     const questionsPerCol = Math.ceil(numQuestions / internalCols);
-    const totalTableRows = questionsPerCol + 1;
-
-    const minRowHeightMm = 10 / (0.7 * 3.78);
-    const minTicketH = minRowHeightMm * totalTableRows + HEADER_AND_PADDING_MM;
-
+    const minTicketH = (10 / (0.7 * 3.78)) * (questionsPerCol + 1) + HEADER_AND_PADDING_MM;
     const recRows = Math.max(1, Math.floor(USABLE_H_MM / minTicketH));
-
     return { recCols, recRows };
   }, [numQuestions, numChoices, internalCols]);
 
@@ -1301,29 +1251,12 @@ function AnswerSheetConstructor({ t }) {
   }, [recommendations.recCols, recommendations.recRows]);
 
   const layout = useMemo(() => {
-    const PAGE_H_MM = 297;
-    const PAGE_PAD_MM = 10;
-    const USABLE_H_MM = PAGE_H_MM - PAGE_PAD_MM;
-
-    const TICKET_H_MM = USABLE_H_MM / rowsPerPage;
-    const HEADER_AND_PADDING_MM = 12;
-    const TABLE_H_MM = TICKET_H_MM - HEADER_AND_PADDING_MM;
-
+    const TABLE_H_MM = (287 / rowsPerPage) - 12;
     const questionsPerCol = Math.ceil(numQuestions / internalCols);
-    const totalTableRows = questionsPerCol + 1;
-    const rowHeightMm = TABLE_H_MM / totalTableRows;
-
-    let calcFontPx = rowHeightMm * 0.7 * 3.78;
+    let calcFontPx = (TABLE_H_MM / (questionsPerCol + 1)) * 0.7 * 3.78;
     if (calcFontPx > 14) calcFontPx = 14;
     if (calcFontPx < 5) calcFontPx = 5;
-
-    return {
-      ticketsPerSheet: ticketsPerRow * rowsPerPage,
-      gridCols: ticketsPerRow,
-      gridRows: rowsPerPage,
-      fontSizePx: calcFontPx,
-      questionsPerCol: questionsPerCol,
-    };
+    return { ticketsPerSheet: ticketsPerRow * rowsPerPage, gridCols: ticketsPerRow, gridRows: rowsPerPage, fontSizePx: calcFontPx, questionsPerCol };
   }, [numQuestions, rowsPerPage, ticketsPerRow, internalCols]);
 
   const internalColumnData = useMemo(() => {
@@ -1337,6 +1270,38 @@ function AnswerSheetConstructor({ t }) {
     });
   }, [numQuestions, internalCols, layout.questionsPerCol]);
 
+  // --- FILTERS ---
+  const availableYears = useMemo(() => {
+    const yrs = new Set(savedKeys.map((k) => k.year).filter(Boolean));
+    yrs.add(new Date().getFullYear().toString());
+    return Array.from(yrs).sort((a, b) => Number(b) - Number(a));
+  }, [savedKeys]);
+
+  const filteredAndSortedKeys = useMemo(() => {
+    return savedKeys
+      .filter((item) => {
+        if (filterYear !== 'ALL' && item.year !== filterYear) return false;
+        if (filterSemester !== 'ALL' && item.semester !== filterSemester) return false;
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase();
+          const matchTitle = item.title?.toLowerCase().includes(q);
+          const matchMod = String(item.module_name || '').toLowerCase().includes(q);
+          if (!matchTitle && !matchMod) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (sortBy === 'newest') return new Date(b.updated_at) - new Date(a.updated_at);
+        if (sortBy === 'oldest') return new Date(a.updated_at) - new Date(b.updated_at);
+        if (sortBy === 'year_desc') {
+          if (b.year !== a.year) return Number(b.year) - Number(a.year);
+          return a.semester.localeCompare(b.semester);
+        }
+        if (sortBy === 'title_asc') return (a.title || '').localeCompare(b.title || '');
+        return 0;
+      });
+  }, [savedKeys, filterYear, filterSemester, sortBy, searchQuery]);
+
   const copyForGoogleDocs = () => {
     if (!sheetRef.current) return;
     const range = document.createRange();
@@ -1344,157 +1309,58 @@ function AnswerSheetConstructor({ t }) {
     const selection = window.getSelection();
     selection?.removeAllRanges();
     selection?.addRange(range);
-    try {
-      document.execCommand('copy');
-      alert('Copied!');
-    } catch (err) {
-      alert('Failed to copy manually.');
-    }
+    try { document.execCommand('copy'); alert('Copied!'); } catch (err) { alert('Failed to copy manually.'); }
     selection?.removeAllRanges();
   };
 
   const renderTicket = (ticketIndex) => {
-    const assignedSet =
-      sets.length > 0
-        ? fillMode === 'once'
-          ? sets[ticketIndex] || null
-          : sets[ticketIndex % sets.length]
-        : null;
-
-    if (isAnswerKeyMode && fillMode === 'once' && !assignedSet) {
-      return <div key={ticketIndex} style={{ width: '100%', height: '100%' }} />;
-    }
+    const assignedSet = sets.length > 0 ? (fillMode === 'once' ? sets[ticketIndex] || null : sets[ticketIndex % sets.length]) : null;
+    if (isAnswerKeyMode && fillMode === 'once' && !assignedSet) return <div key={ticketIndex} style={{ width: '100%', height: '100%' }} />;
 
     const setLabel = assignedSet ? assignedSet.name : '___';
     const modLabel = moduleName.trim() !== '' ? moduleName : '___';
 
     return (
-      <div
-        key={ticketIndex}
-        style={{
-          border: '1px dashed #999',
-          padding: '2mm',
-          boxSizing: 'border-box',
-          display: 'flex',
-          flexDirection: 'column',
-          width: '100%',
-          height: '100%',
-          overflow: 'hidden',
-        }}
-      >
-        {/* TICKET HEADER */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            fontSize: `${Math.max(10, layout.fontSizePx)}px`,
-            marginBottom: '2mm',
-            fontWeight: 'bold',
-            fontFamily: 'serif',
-            gap: '2mm',
-            whiteSpace: 'nowrap',
-          }}
-        >
+      <div key={ticketIndex} style={{ border: '1px dashed #999', padding: '2mm', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: `${Math.max(10, layout.fontSizePx)}px`, marginBottom: '2mm', fontWeight: 'bold', fontFamily: 'serif', gap: '2mm', whiteSpace: 'nowrap' }}>
           {isAnswerKeyMode ? (
             <>
-              <span>
-                Module {modLabel} - Set {setLabel}
-              </span>
-              <span
-                style={{
-                  fontSize: `${Math.max(8, layout.fontSizePx * 0.85)}px`,
-                  border: '1px solid #000',
-                  padding: '0 3px',
-                }}
-              >
-                KEY
-              </span>
+              <span>Module {modLabel} - Set {setLabel}</span>
+              <span style={{ fontSize: `${Math.max(8, layout.fontSizePx * 0.85)}px`, border: '1px solid #000', padding: '0 3px' }}>KEY</span>
             </>
           ) : (
             <>
               <span>{t('sheet_student')} ______________________</span>
-              <span>{t('sheet_group')} _________</span>
+              <span>Module {useModuleHeaderOnStudentSheet ? `${modLabel} - Set ${setLabel}` : '____ - Set ____'}</span>
             </>
           )}
         </div>
 
-        {/* TABLES */}
         <div style={{ flex: 1, display: 'flex', gap: '2mm', minHeight: 0 }}>
           {internalColumnData.map((nums, colIdx) => (
-            <table
-              key={colIdx}
-              style={{
-                flex: 1,
-                height: '100%',
-                borderCollapse: 'collapse',
-                fontSize: `${layout.fontSizePx}px`,
-                lineHeight: '1.15',
-                fontFamily: 'serif',
-              }}
-            >
+            <table key={colIdx} style={{ flex: 1, height: '100%', borderCollapse: 'collapse', fontSize: `${layout.fontSizePx}px`, lineHeight: '1.15', fontFamily: 'serif' }}>
               <thead>
-                <tr
-                  style={{
-                    backgroundColor: '#222',
-                    color: 'white',
-                    height: '1px',
-                    boxShadow: 'inset 0 0 0 1000px #222',
-                    WebkitPrintColorAdjust: 'exact',
-                    printColorAdjust: 'exact',
-                  }}
-                >
+                <tr style={{ backgroundColor: '#222', color: 'white', height: '1px', boxShadow: 'inset 0 0 0 1000px #222', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
                   <th style={{ border: '1px solid #000', padding: 0, width: '15%' }}>#</th>
-                  <th style={{ border: '1px solid #000', padding: 0 }} colSpan={numChoices}>
-                    {t('sheet_ans')}
-                  </th>
+                  <th style={{ border: '1px solid #000', padding: 0 }} colSpan={numChoices}>{t('sheet_ans')}</th>
                 </tr>
               </thead>
               <tbody>
                 {nums.map((num, i) => (
                   <tr key={i}>
-                    <td
-                      style={{
-                        border: '1px solid #000',
-                        textAlign: 'center',
-                        fontWeight: 'bold',
-                        padding: 0,
-                      }}
-                    >
-                      {num ? `${num}.` : ''}
-                    </td>
+                    <td style={{ border: '1px solid #000', textAlign: 'center', fontWeight: 'bold', padding: 0 }}>{num ? `${num}.` : ''}</td>
                     {choices.map((choice) => {
-                      const isMarked =
-                        isAnswerKeyMode &&
-                        num &&
-                        assignedSet &&
-                        assignedSet.answers[num]?.includes(choice);
-
+                      const isMarked = isAnswerKeyMode && num && assignedSet && assignedSet.answers[num]?.includes(choice);
                       return (
                         <td
                           key={choice}
-                          onClick={(e) =>
-                            num &&
-                            assignedSet &&
-                            toggleCellAnswer(assignedSet.id, num, choice, e.shiftKey)
-                          }
-                          title={
-                            isAnswerKeyMode && num
-                              ? `Click to mark Q${num} = ${choice.toUpperCase()} (Shift+Click for multi)`
-                              : undefined
-                          }
+                          onClick={(e) => num && assignedSet && toggleCellAnswer(assignedSet.id, num, choice, e.shiftKey)}
+                          title={isAnswerKeyMode && num ? `Click to mark Q${num} = ${choice.toUpperCase()}` : undefined}
                           style={{
-                            border: '1px solid #000',
-                            textAlign: 'center',
-                            padding: 0,
-                            userSelect: 'none',
-                            cursor: isAnswerKeyMode && num ? 'pointer' : 'default',
-                            backgroundColor: isMarked ? '#000000' : 'transparent',
-                            color: isMarked ? '#ffffff' : '#000000',
-                            fontWeight: isMarked ? 'bold' : 'normal',
-                            boxShadow: isMarked ? 'inset 0 0 0 1000px #000000' : 'none',
-                            WebkitPrintColorAdjust: 'exact',
-                            printColorAdjust: 'exact',
+                            border: '1px solid #000', textAlign: 'center', padding: 0, userSelect: 'none', cursor: isAnswerKeyMode && num ? 'pointer' : 'default',
+                            backgroundColor: isMarked ? '#000000' : 'transparent', color: isMarked ? '#ffffff' : '#000000',
+                            fontWeight: isMarked ? 'bold' : 'normal', boxShadow: isMarked ? 'inset 0 0 0 1000px #000000' : 'none',
+                            WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
                           }}
                         >
                           {num ? choice : ''}
@@ -1517,25 +1383,8 @@ function AnswerSheetConstructor({ t }) {
         @media print {
           @page { size: A4; margin: 0mm; }
           body { visibility: hidden; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          #answer-sheet-container {
-            visibility: visible !important;
-            position: fixed;
-            left: 0;
-            top: 0;
-            width: 210mm;
-            height: 297mm;
-            margin: 0;
-            padding: 5mm;
-            background: white;
-            z-index: 9999;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          #answer-sheet-container * {
-            visibility: visible !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
+          #answer-sheet-container { visibility: visible !important; position: fixed; left: 0; top: 0; width: 210mm; height: 297mm; margin: 0; padding: 5mm; background: white; z-index: 9999; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          #answer-sheet-container * { visibility: visible !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           .print\\:hidden { display: none !important; }
         }
       `}</style>
@@ -1548,159 +1397,70 @@ function AnswerSheetConstructor({ t }) {
       {/* MAIN CONTROLS */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-wrap gap-4 items-end justify-center print:hidden">
         <div className="space-y-1">
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            {t('sheet_total')}
-          </label>
-          <input
-            type="number"
-            min="1"
-            max="200"
-            value={numQuestions}
-            onChange={(e) => setNumQuestions(Number(e.target.value))}
-            className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-          />
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_total')}</label>
+          <input type="number" min="1" max="200" value={numQuestions} onChange={(e) => setNumQuestions(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
         </div>
         <div className="space-y-1">
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            {t('sheet_choices')}
-          </label>
-          <select
-            value={numChoices}
-            onChange={(e) => setNumChoices(Number(e.target.value))}
-            className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-          >
-            <option value={3}>3 (a-c)</option>
-            <option value={4}>4 (a-d)</option>
-            <option value={5}>5 (a-e)</option>
-            <option value={6}>6 (a-f)</option>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_choices')}</label>
+          <select value={numChoices} onChange={(e) => setNumChoices(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+            <option value={3}>3 (a-c)</option><option value={4}>4 (a-d)</option><option value={5}>5 (a-e)</option><option value={6}>6 (a-f)</option>
           </select>
         </div>
         <div className="space-y-1">
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            {t('sheet_q_cols')}
-          </label>
-          <select
-            value={internalCols}
-            onChange={(e) => setInternalCols(Number(e.target.value))}
-            className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-          >
-            <option value={1}>1</option>
-            <option value={2}>2</option>
-            <option value={3}>3</option>
-            <option value={4}>4</option>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_q_cols')}</label>
+          <select value={internalCols} onChange={(e) => setInternalCols(Number(e.target.value))} className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none">
+            <option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option>
           </select>
         </div>
         <div className="space-y-1">
-          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            {t('sheet_page_grid')}
-          </label>
-          <select
-            value={`${ticketsPerRow}x${rowsPerPage}`}
-            onChange={(e) => {
-              const [c, r] = e.target.value.split('x').map(Number);
-              setTicketsPerRow(c);
-              setRowsPerPage(r);
-            }}
-            className="w-56 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-indigo-700 bg-indigo-50"
-          >
-            {Array.from({ length: Math.max(4, recommendations.recCols) }, (_, i) => i + 1).map(
-              (c) => (
-                <optgroup key={c} label={`${c} Columns Wide`}>
-                  {Array.from(
-                    { length: Math.max(10, recommendations.recRows + 2) },
-                    (_, i) => i + 1
-                  ).map((r) => {
-                    const isRec = c === recommendations.recCols && r === recommendations.recRows;
-                    return (
-                      <option key={`${c}x${r}`} value={`${c}x${r}`}>
-                        {c} x {r} = {c * r} {t('sheet_tickets')}{' '}
-                        {isRec ? t('sheet_recommended') : ''}
-                      </option>
-                    );
-                  })}
-                </optgroup>
-              )
-            )}
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('sheet_page_grid')}</label>
+          <select value={`${ticketsPerRow}x${rowsPerPage}`} onChange={(e) => { const [c, r] = e.target.value.split('x').map(Number); setTicketsPerRow(c); setRowsPerPage(r); }} className="w-56 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-indigo-700 bg-indigo-50">
+            {Array.from({ length: Math.max(4, recommendations.recCols) }, (_, i) => i + 1).map((c) => (
+              <optgroup key={c} label={`${c} Columns Wide`}>
+                {Array.from({ length: Math.max(10, recommendations.recRows + 2) }, (_, i) => i + 1).map((r) => {
+                  const isRec = c === recommendations.recCols && r === recommendations.recRows;
+                  return <option key={`${c}x${r}`} value={`${c}x${r}`}>{c} x {r} = {c * r} {t('sheet_tickets')} {isRec ? t('sheet_recommended') : ''}</option>;
+                })}
+              </optgroup>
+            ))}
           </select>
         </div>
 
         <div className="flex flex-wrap gap-2 ml-auto">
           {!isUnlocked ? (
-            <button
-              type="button"
-              onClick={() => {
-                setShowPasswordPrompt((prev) => !prev);
-                setPasswordError(false);
-              }}
-              className="bg-amber-50 border border-amber-300 text-amber-800 px-4 py-2.5 rounded-lg font-medium hover:bg-amber-100 transition-colors flex items-center gap-2"
-            >
-              <span>🔒</span> Answer Key
+            <button type="button" onClick={() => { setShowPasswordPrompt(!showPasswordPrompt); setAuthError(''); }} className="bg-amber-50 border border-amber-300 text-amber-800 px-4 py-2.5 rounded-lg font-medium hover:bg-amber-100 transition-colors flex items-center gap-2">
+              <span>🔒</span> Cloud Login
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={handleLock}
-              className="bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded-lg font-medium hover:bg-red-100 transition-colors flex items-center gap-2"
-            >
-              <span>🔓</span> Lock Key
+            <button type="button" onClick={handleLogout} className="bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded-lg font-medium hover:bg-red-100 transition-colors flex items-center gap-2">
+              <span>🔓</span> Logout ({user?.email})
             </button>
           )}
-
-          <button
-            onClick={copyForGoogleDocs}
-            className="bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
-          >
-            <Copy className="w-4 h-4" /> {t('sheet_btn_copy')}
+          <button onClick={copyForGoogleDocs} className="bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition-colors flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+            {t('sheet_btn_copy')}
           </button>
-          <button
-            onClick={() => setTimeout(() => window.print(), 100)}
-            className="bg-gray-800 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-gray-900 transition-colors flex items-center gap-2"
-          >
-            <Printer className="w-4 h-4" /> {t('sheet_btn_print')}
+          <button onClick={() => setTimeout(() => window.print(), 100)} className="bg-gray-800 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-gray-900 transition-colors flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+            {t('sheet_btn_print')}
           </button>
         </div>
       </div>
 
-      {/* PASSWORD PROMPT */}
+      {/* CLOUD LOGIN PROMPT */}
       {showPasswordPrompt && !isUnlocked && (
-        <form
-          onSubmit={handlePasswordSubmit}
-          className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-wrap items-center justify-center gap-3 print:hidden shadow-sm"
-        >
-          <span className="text-sm font-semibold text-amber-900">
-            Enter Password to Unlock Answer Key Mode:
-          </span>
-          <input
-            type="password"
-            value={passwordInput}
-            onChange={(e) => {
-              setPasswordInput(e.target.value);
-              setPasswordError(false);
-            }}
-            placeholder="Password..."
-            autoFocus
-            className={`px-3 py-1.5 border rounded-lg text-sm outline-none ${
-              passwordError
-                ? 'border-red-500 bg-red-50 focus:ring-2 focus:ring-red-400'
-                : 'border-amber-300 bg-white focus:ring-2 focus:ring-amber-500'
-            }`}
-          />
-          <button
-            type="submit"
-            className="bg-amber-600 text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-amber-700 transition-colors"
-          >
-            Unlock
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowPasswordPrompt(false)}
-            className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1"
-          >
-            Cancel
-          </button>
-          {passwordError && (
-            <span className="text-xs font-bold text-red-600">Incorrect password!</span>
-          )}
+        <form onSubmit={handleLoginSubmit} className="bg-amber-50 border border-amber-200 rounded-xl p-6 max-w-md mx-auto flex flex-col gap-4 print:hidden shadow-md">
+          <div className="text-center">
+            <span className="text-lg font-bold text-amber-900 flex items-center justify-center gap-2">☁️ Secure Cloud Login</span>
+            <p className="text-xs text-amber-700 mt-1">Log in to manage and share your answer keys</p>
+          </div>
+          <input type="email" value={emailInput} onChange={(e) => { setEmailInput(e.target.value); setAuthError(''); }} placeholder="University Email" required className="px-4 py-2 bg-white text-gray-900 border border-amber-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500" />
+          <input type="password" value={passwordInput} onChange={(e) => { setPasswordInput(e.target.value); setAuthError(''); }} placeholder="Password" required className="px-4 py-2 bg-white text-gray-900 border border-amber-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500" />
+          {authError && <span className="text-xs font-bold text-red-600 text-center">{authError}</span>}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setShowPasswordPrompt(false)} className="flex-1 bg-white border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-semibold hover:bg-gray-50 transition-colors">Cancel</button>
+            <button type="submit" className="flex-1 bg-amber-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-amber-700 transition-colors">Login</button>
+          </div>
         </form>
       )}
 
@@ -1709,251 +1469,106 @@ function AnswerSheetConstructor({ t }) {
         <div className="bg-white rounded-xl shadow-sm border-2 border-indigo-200 p-6 space-y-5 print:hidden">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-4">
             <div className="flex items-center gap-3">
-              <span className="px-2.5 py-1 bg-indigo-100 text-indigo-800 font-bold text-xs rounded-md uppercase tracking-wide">
-                Answer Key Manager
-              </span>
-              <span className="text-xs text-gray-500">
-                Click table cells directly in the sheet preview below or type/paste answers per set.
-              </span>
+              <span className="px-2.5 py-1 bg-indigo-100 text-indigo-800 font-bold text-xs rounded-md uppercase tracking-wide flex items-center gap-1">☁️ Cloud Key Manager</span>
+              <span className="text-xs text-gray-500">Click table cells directly in the sheet preview below or type/paste answers per set.</span>
             </div>
-
             <div className="flex flex-wrap items-center gap-4">
-              {/* Sheet Mode Toggle */}
               <div className="flex items-center bg-gray-100 p-1 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setIsAnswerKeyMode(false)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-                    !isAnswerKeyMode
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Student Blank Sheet
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsAnswerKeyMode(true)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-                    isAnswerKeyMode
-                      ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Filled Answer Key
-                </button>
+                <button type="button" onClick={() => setIsAnswerKeyMode(false)} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${!isAnswerKeyMode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>Student Blank Sheet</button>
+                <button type="button" onClick={() => setIsAnswerKeyMode(true)} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${isAnswerKeyMode ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>Filled Answer Key</button>
               </div>
             </div>
           </div>
 
-          {/* Header & Layout Controls */}
           <div className="flex flex-wrap items-center gap-6">
             <div className="flex items-center gap-2">
               <label className="text-xs font-semibold text-gray-600 uppercase">Module #:</label>
-              <input
-                type="text"
-                value={moduleName}
-                onChange={(e) => setModuleName(e.target.value)}
-                placeholder="e.g. 1"
-                className="w-20 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none"
-              />
+              <input type="text" value={moduleName} onChange={(e) => setModuleName(e.target.value)} placeholder="e.g. 1" className="w-20 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none" />
             </div>
-
             <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-gray-600 uppercase">
-                Sheet Distribution:
-              </label>
-              <select
-                value={fillMode}
-                onChange={(e) => setFillMode(e.target.value)}
-                className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-              >
+              <label className="text-xs font-semibold text-gray-600 uppercase">Sheet Distribution:</label>
+              <select value={fillMode} onChange={(e) => setFillMode(e.target.value)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
                 <option value="cycle">Repeat / Cycle sets to fill all tickets</option>
                 <option value="once">1 Ticket per Set only</option>
               </select>
             </div>
-
             {!isAnswerKeyMode && (
               <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={useModuleHeaderOnStudentSheet}
-                  onChange={(e) => setUseModuleHeaderOnStudentSheet(e.target.checked)}
-                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                Show "Module N - Set N" on Student Blank Sheets
+                <input type="checkbox" checked={useModuleHeaderOnStudentSheet} onChange={(e) => setUseModuleHeaderOnStudentSheet(e.target.checked)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /> Show "Module N - Set N" on Student Blank Sheets
               </label>
             )}
-
-            <button
-              type="button"
-              onClick={addSet}
-              className="ml-auto bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors"
-            >
-              + Add Set
-            </button>
+            <button type="button" onClick={addSet} className="ml-auto bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors">+ Add Set</button>
           </div>
 
-          {/* SAVE & ARCHIVE BAR */}
+          {/* SAVE & CLOUD ARCHIVE BAR */}
           <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-4 space-y-4">
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1 flex-1 min-w-[180px]">
-                <label className="block text-[11px] font-bold text-gray-600 uppercase">
-                  Key Title / Subject
-                </label>
-                <input
-                  type="text"
-                  value={saveTitle}
-                  onChange={(e) => setSaveTitle(e.target.value)}
-                  placeholder={`e.g. Midterm Exam (Default: Module ${moduleName || '1'})`}
-                  className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
+                <label className="block text-[11px] font-bold text-gray-600 uppercase">Key Title / Subject</label>
+                <input type="text" value={saveTitle} onChange={(e) => setSaveTitle(e.target.value)} placeholder={`e.g. Midterm Exam (Default: Module ${moduleName || '1'})`} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
               </div>
-
               <div className="space-y-1">
-                <label className="block text-[11px] font-bold text-gray-600 uppercase">
-                  Year
-                </label>
-                <input
-                  type="number"
-                  value={saveYear}
-                  onChange={(e) => setSaveYear(e.target.value)}
-                  placeholder="2026"
-                  className="w-24 px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-semibold bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
+                <label className="block text-[11px] font-bold text-gray-600 uppercase">Year</label>
+                <input type="number" value={saveYear} onChange={(e) => setSaveYear(e.target.value)} placeholder="2026" className="w-24 px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-semibold bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
               </div>
-
               <div className="space-y-1">
-                <label className="block text-[11px] font-bold text-gray-600 uppercase">
-                  Semester
-                </label>
-                <select
-                  value={saveSemester}
-                  onChange={(e) => setSaveSemester(e.target.value)}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-semibold bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                >
+                <label className="block text-[11px] font-bold text-gray-600 uppercase">Semester</label>
+                <select value={saveSemester} onChange={(e) => setSaveSemester(e.target.value)} className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-semibold bg-white focus:ring-2 focus:ring-indigo-500 outline-none">
                   <option value="Autumn">Autumn Semester</option>
                   <option value="Spring">Spring Semester</option>
                   <option value="Summer">Summer Semester</option>
                 </select>
               </div>
-
-              <button
-                type="button"
-                onClick={handleSaveCurrentKey}
-                className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors shadow-sm"
-              >
-                💾 Save Key
+              <button type="button" onClick={handleSaveCurrentKey} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors shadow-sm">
+                💾 Save to Cloud
               </button>
-
-              <button
-                type="button"
-                onClick={() => setShowSavedList((prev) => !prev)}
-                className="bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-gray-50 transition-colors"
-              >
-                {showSavedList ? 'Hide' : 'Show'} Saved ({savedKeys.length})
+              <button type="button" onClick={() => setShowSavedList((prev) => !prev)} className="bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-gray-50 transition-colors">
+                {showSavedList ? 'Hide' : 'Show'} Cloud Archive ({savedKeys.length})
               </button>
             </div>
 
-            {/* SAVED KEYS LIST & FILTERS */}
             {showSavedList && (
               <div className="border-t border-indigo-100 pt-3 space-y-3">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-bold text-gray-600 uppercase text-[11px]">Filter & Sort:</span>
-                  <select
-                    value={filterYear}
-                    onChange={(e) => setFilterYear(e.target.value)}
-                    className="px-2.5 py-1 border border-gray-300 rounded-md bg-white text-xs"
-                  >
+                  <span className="font-bold text-gray-600 uppercase text-[11px]">Filter Cloud:</span>
+                  <select value={filterYear} onChange={(e) => setFilterYear(e.target.value)} className="px-2.5 py-1 border border-gray-300 rounded-md bg-white text-xs">
                     <option value="ALL">All Years</option>
-                    {availableYears.map((yr) => (
-                      <option key={yr} value={yr}>
-                        {yr}
-                      </option>
-                    ))}
+                    {availableYears.map((yr) => <option key={yr} value={yr}>{yr}</option>)}
                   </select>
-
-                  <select
-                    value={filterSemester}
-                    onChange={(e) => setFilterSemester(e.target.value)}
-                    className="px-2.5 py-1 border border-gray-300 rounded-md bg-white text-xs"
-                  >
-                    <option value="ALL">All Semesters</option>
-                    <option value="Autumn">Autumn Semester</option>
-                    <option value="Spring">Spring Semester</option>
-                    <option value="Summer">Summer Semester</option>
+                  <select value={filterSemester} onChange={(e) => setFilterSemester(e.target.value)} className="px-2.5 py-1 border border-gray-300 rounded-md bg-white text-xs">
+                    <option value="ALL">All Semesters</option><option value="Autumn">Autumn</option><option value="Spring">Spring</option><option value="Summer">Summer</option>
                   </select>
-
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="px-2.5 py-1 border border-gray-300 rounded-md bg-white text-xs"
-                  >
-                    <option value="newest">Sort: Newest First</option>
-                    <option value="oldest">Sort: Oldest First</option>
-                    <option value="year_desc">Sort: Year & Semester</option>
-                    <option value="title_asc">Sort: Title (A-Z)</option>
+                  <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="px-2.5 py-1 border border-gray-300 rounded-md bg-white text-xs">
+                    <option value="newest">Sort: Newest First</option><option value="oldest">Sort: Oldest First</option><option value="year_desc">Sort: Year & Semester</option><option value="title_asc">Sort: Title (A-Z)</option>
                   </select>
-
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search title or module..."
-                    className="ml-auto px-2.5 py-1 border border-gray-300 rounded-md bg-white text-xs outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
+                  <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search title or module..." className="px-2.5 py-1 border border-gray-300 rounded-md bg-white text-xs outline-none focus:ring-1 focus:ring-indigo-500" />
+                  
+                  {/* IMPORT SHARED KEY BOX */}
+                  <div className="ml-auto flex items-center gap-1 bg-white p-1 rounded-md border border-gray-300">
+                    <input type="text" value={importCode} onChange={(e) => setImportCode(e.target.value.toUpperCase())} placeholder="Paste Share Code" className="w-32 px-2 py-0.5 outline-none text-xs font-mono uppercase" maxLength={6} />
+                    <button onClick={handleImportSharedKey} className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-bold text-xs hover:bg-indigo-200">Import</button>
+                  </div>
                 </div>
 
                 {filteredAndSortedKeys.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic py-2 text-center">
-                    No saved answer keys match your filter.
-                  </p>
+                  <p className="text-xs text-gray-400 italic py-2 text-center">No saved answer keys match your filter.</p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">
                     {filteredAndSortedKeys.map((item) => (
-                      <div
-                        key={item.id}
-                        className="bg-white border border-gray-200 rounded-lg p-2.5 flex items-center justify-between gap-2 shadow-sm"
-                      >
+                      <div key={item.id} className="bg-white border border-gray-200 rounded-lg p-2.5 flex items-center justify-between gap-2 shadow-sm">
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded text-[10px] font-bold">
-                              {item.year} • {item.semester}
-                            </span>
-                            <span className="font-bold text-xs text-gray-800 truncate">
-                              {item.title}
-                            </span>
+                            <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded text-[10px] font-bold">{item.year} • {item.semester}</span>
+                            <span className="font-bold text-xs text-gray-800 truncate">{item.title}</span>
+                            {item.share_code && <span className="bg-purple-100 text-purple-800 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold flex items-center gap-1 cursor-help" title="Share this code with colleagues">Code: {item.share_code}</span>}
                           </div>
-                          <div className="text-[11px] text-gray-500 mt-0.5">
-                            Module {item.moduleName} • {item.sets?.length || 0} Sets •{' '}
-                            {item.numQuestions} Qs
-                          </div>
+                          <div className="text-[11px] text-gray-500 mt-0.5">Module {item.module_name} • {item.sets?.length || 0} Sets • {item.num_questions} Qs</div>
                         </div>
-
                         <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleLoadSavedKey(item)}
-                            className="px-2.5 py-1 bg-indigo-600 text-white rounded text-xs font-semibold hover:bg-indigo-700"
-                          >
-                            Load
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOverwriteSavedKey(item.id)}
-                            title="Overwrite with current sets/settings"
-                            className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200"
-                          >
-                            Update
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSavedKey(item.id)}
-                            title="Delete saved key"
-                            className="px-2 py-1 text-red-500 hover:bg-red-50 rounded text-xs font-bold"
-                          >
-                            ✕
-                          </button>
+                          <button type="button" onClick={() => handleLoadCloudKey(item)} className="px-2.5 py-1 bg-indigo-600 text-white rounded text-[10px] font-bold hover:bg-indigo-700">Load</button>
+                          <button type="button" onClick={() => handleOverwriteCloudKey(item.id)} className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-[10px] font-bold hover:bg-gray-200">Update</button>
+                          {!item.share_code && <button type="button" onClick={() => handleGenerateShareCode(item.id)} className="px-2 py-1 bg-purple-50 text-purple-700 rounded text-[10px] font-bold hover:bg-purple-100">Share</button>}
+                          <button type="button" onClick={() => handleDeleteCloudKey(item.id)} className="px-2 py-1 text-red-500 hover:bg-red-50 rounded text-xs font-bold">✕</button>
                         </div>
                       </div>
                     ))}
@@ -1966,9 +1581,7 @@ function AnswerSheetConstructor({ t }) {
           {/* SETS LIST WITH PSYCHOMETRIC ANALYSIS */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {sets.map((s) => {
-              const answeredCount = Object.keys(s.answers).filter(
-                (q) => Number(q) <= numQuestions && s.answers[q]?.length > 0
-              ).length;
+              const answeredCount = Object.keys(s.answers).filter((q) => Number(q) <= numQuestions && s.answers[q]?.length > 0).length;
 
               // --- PSYCHOMETRIC PATTERN ANALYSIS ---
               const flags = [];
@@ -1977,49 +1590,30 @@ function AnswerSheetConstructor({ t }) {
               const totalAns = filteredStr.length;
 
               if (totalAns > 0) {
-                // 1. Long Streaks (4+ of the exact same letter)
                 const streakMatch = filteredStr.match(/([a-z])\1{3,}/i);
                 if (streakMatch) flags.push(`Streak: 4+ '${streakMatch[1].toUpperCase()}'s in a row`);
 
-                // 2. Rhythm/Sequences (3+ repetitions of an alternating pattern like ABABAB or ABCDABCD)
                 const rhythmMatch = filteredStr.match(/((?!([a-z])\2+).{2,4}?)\1{2,}/i);
                 if (rhythmMatch) flags.push(`Pattern: Repeating rhythm '${rhythmMatch[1].toUpperCase()}'`);
 
-                // Distribution metrics only kick in at 10+ questions to avoid false positives on tiny quizzes
                 if (totalAns >= 10) {
                   choices.forEach(c => {
                     const count = filteredStr.split(c).length - 1;
                     const pct = (count / totalAns) * 100;
-                    
-                    // 3. Severe Imbalance (Too rare or too frequent)
                     if (pct < 15) flags.push(`Rare: '${c.toUpperCase()}' is only ${Math.round(pct)}% of answers`);
                     if (pct > 35) flags.push(`Overused: '${c.toUpperCase()}' makes up ${Math.round(pct)}% of answers`);
-                    
-                    // 4. Desert Gaps (10+ questions without seeing this letter)
-                    if (new RegExp(`[^${c}]{10,}`, 'i').test(filteredStr)) {
-                      flags.push(`Desert: 10+ question gap without an '${c.toUpperCase()}'`);
-                    }
+                    if (new RegExp(`[^${c}]{10,}`, 'i').test(filteredStr)) flags.push(`Desert: 10+ question gap without an '${c.toUpperCase()}'`);
                   });
                 }
               }
               const uniqueFlags = [...new Set(flags)];
 
               return (
-                <div
-                  key={s.id}
-                  className="border border-gray-200 rounded-lg p-3 bg-gray-50 flex flex-col gap-2 relative"
-                >
+                <div key={s.id} className="border border-gray-200 rounded-lg p-3 bg-gray-50 flex flex-col gap-2 relative">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-gray-500 uppercase">
-                        Module {moduleName || '_'} - Set
-                      </span>
-                      <input
-                        type="text"
-                        value={s.name}
-                        onChange={(e) => updateSetName(s.id, e.target.value)}
-                        className="w-16 px-2 py-1 border border-gray-300 rounded text-xs font-bold bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                      />
+                      <span className="text-xs font-bold text-gray-500 uppercase">Module {moduleName || '_'} - Set</span>
+                      <input type="text" value={s.name} onChange={(e) => updateSetName(s.id, e.target.value)} className="w-16 px-2 py-1 border border-gray-300 rounded text-xs font-bold bg-white focus:ring-2 focus:ring-indigo-500 outline-none" />
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -2028,26 +1622,10 @@ function AnswerSheetConstructor({ t }) {
                           ✓ Healthy Key
                         </span>
                       ) : null}
-                      <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
-                        {answeredCount} / {numQuestions} answered
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => clearSetAnswers(s.id)}
-                        className="text-xs text-gray-500 hover:text-gray-800 px-1.5 py-0.5"
-                        title="Clear answers for this set"
-                      >
-                        Clear
-                      </button>
+                      <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">{answeredCount} / {numQuestions} answered</span>
+                      <button type="button" onClick={() => clearSetAnswers(s.id)} className="text-xs text-gray-500 hover:text-gray-800 px-1.5 py-0.5" title="Clear answers for this set">Clear</button>
                       {sets.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeSet(s.id)}
-                          className="text-xs text-red-500 hover:text-red-700 font-bold px-1.5 py-0.5"
-                          title="Delete Set"
-                        >
-                          ✕
-                        </button>
+                        <button type="button" onClick={() => removeSet(s.id)} className="text-xs text-red-500 hover:text-red-700 font-bold px-1.5 py-0.5" title="Delete Set">✕</button>
                       )}
                     </div>
                   </div>
@@ -2058,9 +1636,7 @@ function AnswerSheetConstructor({ t }) {
                     onChange={(e) => handleBulkTextChange(s.id, e.target.value)}
                     placeholder={`Type e.g. "abcdab..." or "1a 2b 3c..." (use "-" to skip)`}
                     className={`w-full px-3 py-1.5 border rounded-md text-xs font-mono bg-white outline-none focus:ring-2 transition-colors ${
-                      uniqueFlags.length > 0 && totalAns > 0
-                        ? 'border-yellow-400 focus:ring-yellow-400' 
-                        : 'border-gray-300 focus:ring-indigo-500'
+                      uniqueFlags.length > 0 && totalAns > 0 ? 'border-yellow-400 focus:ring-yellow-400' : 'border-gray-300 focus:ring-indigo-500'
                     }`}
                   />
                   
@@ -2068,9 +1644,7 @@ function AnswerSheetConstructor({ t }) {
                     <div className="bg-yellow-50 border border-yellow-200 rounded p-2 text-[10px] text-yellow-800 leading-tight">
                       <strong className="block mb-1">⚠️ Psychometric Red Flags Detected:</strong>
                       <ul className="list-disc list-inside space-y-0.5 font-medium">
-                        {uniqueFlags.map((flag, idx) => (
-                          <li key={idx}>{flag}</li>
-                        ))}
+                        {uniqueFlags.map((flag, idx) => <li key={idx}>{flag}</li>)}
                       </ul>
                     </div>
                   )}
@@ -2083,49 +1657,18 @@ function AnswerSheetConstructor({ t }) {
 
       {/* STATUS BAR */}
       <div className="bg-indigo-50 text-indigo-700 px-4 py-3 rounded-xl text-sm font-medium flex justify-center items-center gap-3 print:hidden shadow-sm border border-indigo-100">
-        <Settings className="w-4 h-4" />
-        <span>
-          {t('sheet_fitting')} {layout.ticketsPerSheet} {t('sheet_tickets')} ({layout.gridRows}x
-          {layout.gridCols})
-        </span>
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+        <span>{t('sheet_fitting')} {layout.ticketsPerSheet} {t('sheet_tickets')} ({layout.gridRows}x{layout.gridCols})</span>
         <span className="opacity-50">•</span>
-        <span>
-          {t('sheet_font')}:{' '}
-          <span
-            className={
-              layout.fontSizePx < 10 ? 'text-red-600 font-bold' : 'text-green-700 font-bold'
-            }
-          >
-            {layout.fontSizePx.toFixed(1)}px
-          </span>
-        </span>
+        <span>{t('sheet_font')}: <span className={layout.fontSizePx < 10 ? 'text-red-600 font-bold' : 'text-green-700 font-bold'}>{layout.fontSizePx.toFixed(1)}px</span></span>
         {isUnlocked && (
-          <>
-            <span className="opacity-50">•</span>
-            <span className="font-bold text-indigo-900">
-              Mode: {isAnswerKeyMode ? `Answer Key (${sets.length} Sets)` : 'Student Blank Sheet'}
-            </span>
-          </>
+          <><span className="opacity-50">•</span><span className="font-bold text-indigo-900">Mode: {isAnswerKeyMode ? `Answer Key (${sets.length} Sets)` : 'Student Blank Sheet'}</span></>
         )}
       </div>
 
       {/* SHEET PREVIEW / PRINT CONTAINER */}
       <div className="flex justify-center bg-gray-200 p-8 overflow-auto print:bg-white print:p-0">
-        <div
-          id="answer-sheet-container"
-          ref={sheetRef}
-          className="bg-white shadow-2xl mx-auto text-black"
-          style={{
-            width: '210mm',
-            height: '297mm',
-            boxSizing: 'border-box',
-            padding: '5mm',
-            display: 'grid',
-            gridTemplateColumns: `repeat(${layout.gridCols}, 1fr)`,
-            gridTemplateRows: `repeat(${layout.gridRows}, 1fr)`,
-            gap: '2mm',
-          }}
-        >
+        <div id="answer-sheet-container" ref={sheetRef} className="bg-white shadow-2xl mx-auto text-black" style={{ width: '210mm', height: '297mm', boxSizing: 'border-box', padding: '5mm', display: 'grid', gridTemplateColumns: `repeat(${layout.gridCols}, 1fr)`, gridTemplateRows: `repeat(${layout.gridRows}, 1fr)`, gap: '2mm' }}>
           {Array.from({ length: layout.ticketsPerSheet }).map((_, i) => renderTicket(i))}
         </div>
       </div>
