@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle, BarChart, Activity, Globe, Slash, Hash, BookOpen } from 'lucide-react';
+import { Plus, Trash2, Upload, FileText, Shuffle, Copy, Check, RefreshCw, X, Info, List, RotateCcw, Grid, Printer, Scissors, Settings, Award, AlertCircle, BarChart, Activity, Globe, Slash, Hash, BookOpen, Cloud } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
 // --- TRANSLATION DICTIONARY ---
@@ -359,13 +359,17 @@ function TestGenerator({ t }) {
   const [generatedTest, setGeneratedTest] = useState([]);
   const [generationWarnings, setGenerationWarnings] = useState([]);
   
+  // --- GUIDE STATE ---
+  const [showGuide, setShowGuide] = useState(false);
+
   // --- TOGGLES ---
   const [isRandomized, setIsRandomized] = useState(true);
   const [isChoiceRandomized, setIsChoiceRandomized] = useState(true);
   const [showNumbering, setShowNumbering] = useState(true);
   const [isProMode, setIsProMode] = useState(false);
   
-  // --- ANSWER KEY & SYNC STATES ---
+  // --- ANSWER KEY & CLOUD SYNC STATES ---
+  const [user, setUser] = useState(null);
   const [removeAsterisks, setRemoveAsterisks] = useState(false);
   const [extractedKey, setExtractedKey] = useState({});
   const [extractedBulkKey, setExtractedBulkKey] = useState('');
@@ -378,6 +382,7 @@ function TestGenerator({ t }) {
   const [showPasteModal, setShowPasteModal] = useState(null);
   const [pasteText, setPasteText] = useState('');
 
+  // --- INITIALIZATION & AUTH ---
   useEffect(() => {
     if (!window.mammoth) {
       const script = document.createElement('script');
@@ -385,6 +390,14 @@ function TestGenerator({ t }) {
       script.async = true;
       document.body.appendChild(script);
     }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user || null);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   const resetApp = () => {
@@ -410,7 +423,6 @@ function TestGenerator({ t }) {
     return newArr;
   };
 
-  // --- PARSER (WITH TAG EXTRACTION & INVISIBILITY CLOAK) ---
   const parseQuestions = (text) => {
     const lines = text.replace(/\r\n/g, '\n').split('\n');
     const questions = [];
@@ -422,7 +434,6 @@ function TestGenerator({ t }) {
       if (type === 'standard') content = content.replace(/([^\n])\s+([A-Ea-e][\.\)]\s)/g, '$1\n$2');
       
       const tags = [];
-      // Extract [Tags] and remove them from the visible text
       let cleanContent = content.replace(/\[(.*?)\]/g, (match, tag) => {
         tags.push(tag.trim().toLowerCase());
         return ''; 
@@ -433,7 +444,6 @@ function TestGenerator({ t }) {
 
     lines.forEach(line => {
       const trimmed = line.trim();
-      // Match numbering OR tags starting a line
       const isNumStart = /^\s*(\[.*?\]\s*)*\d+[\.\)]/.test(line);
       const isSlashStart = trimmed.startsWith('////') || /^\s*(\[.*?\]\s*)*\/\/\//.test(line);
 
@@ -444,7 +454,6 @@ function TestGenerator({ t }) {
           currentBlock = [trimmed]; 
         } else {
           currentBlockType = 'standard';
-          // Clean the number off but keep tags for the saveBlock regex to catch
           const cleanLine = line.replace(/^(\s*\[.*?\]\s*)*\d+[\.\)]\s*/, (match) => {
              const tagsOnly = match.match(/\[.*?\]/g);
              return tagsOnly ? tagsOnly.join(' ') + ' ' : '';
@@ -473,7 +482,6 @@ function TestGenerator({ t }) {
     setBases(prev => prev.map(base => base.id === id ? { ...base, name: fileName, content: questions } : base));
   };
 
-  // --- QUESTION FORMATTERS ---
   const processStandardQuestion = (text) => {
     const lines = text.split('\n');
     const questionLines = [];
@@ -519,17 +527,16 @@ function TestGenerator({ t }) {
     lines.forEach(line => {
       const trimmed = line.trim();
       if (!trimmed) return; 
-      if (trimmed.startsWith('///') || trimmed.startsWith('//') && !trimmed.startsWith('////')) choiceLines.push(line);
+      if (trimmed.startsWith('///') || (trimmed.startsWith('//') && !trimmed.startsWith('////'))) choiceLines.push(line);
       else questionLines.push(line);
     });
 
-    if (choiceLines.length === 0) return { text: text, answers: null }; // Null answers means ignore in key
+    if (choiceLines.length === 0) return { text: text, answers: null }; 
     const finalChoices = isChoiceRandomized ? shuffleArray(choiceLines) : choiceLines;
     
     return { text: [questionLines.join('\n').trim(), ...finalChoices].join('\n'), answers: null };
   };
 
-  // --- GENERATION ENGINE ---
   const generateTest = () => {
     let finalQuestions = [];
     let newWarnings = [];
@@ -538,19 +545,15 @@ function TestGenerator({ t }) {
       if (base.content.length === 0) return;
 
       if (!isProMode) {
-        // Simple Mode: Pull X random questions from entire base
         if (base.count > 0) {
           const shuffledContent = shuffleArray(base.content);
           finalQuestions = [...finalQuestions, ...shuffledContent.slice(0, base.count)];
         }
       } else {
-        // Pro Mode: Evaluate rules with AND logic
         let availablePool = [...base.content];
         
         base.rules.forEach((rule, rIdx) => {
           if (rule.count <= 0) return;
-
-          // Filter questions that contain ALL tags in the rule
           const matchingQuestions = availablePool.filter(q => 
             rule.tags.every(ruleTag => q.tags.includes(ruleTag.toLowerCase()))
           );
@@ -563,7 +566,6 @@ function TestGenerator({ t }) {
           }
 
           finalQuestions = [...finalQuestions, ...selected];
-          // Remove selected questions from available pool to prevent duplicates
           availablePool = availablePool.filter(q => !selected.includes(q));
         });
       }
@@ -584,7 +586,6 @@ function TestGenerator({ t }) {
       } else {
         result = processStandardQuestion(qObj.text);
         
-        // Only map standard paper questions to the extracted answer key
         keyObj[qNum] = result.answers;
         extractedCount++;
         
@@ -599,7 +600,6 @@ function TestGenerator({ t }) {
     setGeneratedTest(processedQuestions);
     setGenerationWarnings(newWarnings);
     
-    // Only save keys if there were actually standard questions processed
     if (extractedCount > 0) {
       setExtractedKey(keyObj);
       setExtractedBulkKey(bulkKeyString);
@@ -609,56 +609,69 @@ function TestGenerator({ t }) {
     }
   };
 
-  // --- RULE BUILDER HELPERS ---
-  const addRule = (baseId) => {
-    setBases(prev => prev.map(b => b.id === baseId ? { ...b, rules: [...b.rules, { id: Date.now(), tags: [], count: 0 }] } : b));
-  };
-  const removeRule = (baseId, ruleId) => {
-    setBases(prev => prev.map(b => b.id === baseId ? { ...b, rules: b.rules.filter(r => r.id !== ruleId) } : b));
-  };
-  const updateRuleCount = (baseId, ruleId, count) => {
-    setBases(prev => prev.map(b => b.id === baseId ? { ...b, rules: b.rules.map(r => r.id === ruleId ? { ...r, count: parseInt(count) || 0 } : r) } : b));
-  };
-  const addTagToRule = (baseId, ruleId, tag) => {
-    if (!tag) return;
-    setBases(prev => prev.map(b => b.id === baseId ? {
-      ...b, rules: b.rules.map(r => r.id === ruleId ? { ...r, tags: r.tags.includes(tag) ? r.tags : [...r.tags, tag] } : r)
-    } : b));
-  };
-  const removeTagFromRule = (baseId, ruleId, tagToRemove) => {
-    setBases(prev => prev.map(b => b.id === baseId ? {
-      ...b, rules: b.rules.map(r => r.id === ruleId ? { ...r, tags: r.tags.filter(t => t !== tagToRemove) } : r)
-    } : b));
-  };
-
+  const addRule = (baseId) => setBases(prev => prev.map(b => b.id === baseId ? { ...b, rules: [...b.rules, { id: Date.now(), tags: [], count: 0 }] } : b));
+  const removeRule = (baseId, ruleId) => setBases(prev => prev.map(b => b.id === baseId ? { ...b, rules: b.rules.filter(r => r.id !== ruleId) } : b));
+  const updateRuleCount = (baseId, ruleId, count) => setBases(prev => prev.map(b => b.id === baseId ? { ...b, rules: b.rules.map(r => r.id === ruleId ? { ...r, count: parseInt(count) || 0 } : r) } : b));
+  const addTagToRule = (baseId, ruleId, tag) => { if (tag) setBases(prev => prev.map(b => b.id === baseId ? { ...b, rules: b.rules.map(r => r.id === ruleId ? { ...r, tags: r.tags.includes(tag) ? r.tags : [...r.tags, tag] } : r) } : b)); };
+  const removeTagFromRule = (baseId, ruleId, tagToRemove) => setBases(prev => prev.map(b => b.id === baseId ? { ...b, rules: b.rules.map(r => r.id === ruleId ? { ...r, tags: r.tags.filter(t => t !== tagToRemove) } : r) } : b));
   const getAvailableTagsForBase = (base) => {
     const tagSet = new Set();
     base.content.forEach(q => q.tags.forEach(t => tagSet.add(t)));
     return Array.from(tagSet).sort();
   };
 
-  // --- SAVING AND COPYING ---
-  const handleSaveToMemory = () => {
+  // --- CLOUD SYNC FUNCTION ---
+  const handleSaveToMemory = async () => {
     if (!extractedBulkKey) return alert("No key to save! Generate a standard paper test first.");
-    try {
-      const raw = localStorage.getItem('answer_sheet_saved_keys_v1');
-      let savedKeysArchive = raw ? JSON.parse(raw) : [];
-      const newSet = { id: Date.now(), name: syncSet.trim() || '1', answers: extractedKey, bulkText: extractedBulkKey };
-      const existingIndex = savedKeysArchive.findIndex(k => k.moduleName === syncModule && k.year === syncYear && k.semester === syncSemester);
+    if (!user) return alert("☁️ You must log in via the Answer Sheet module first to save to the Cloud!");
 
-      if (existingIndex >= 0) {
-        savedKeysArchive[existingIndex].sets.push(newSet);
-        savedKeysArchive[existingIndex].updatedAt = new Date().toISOString();
+    try {
+      const newSet = { id: Date.now(), name: syncSet.trim() || '1', answers: extractedKey, bulkText: extractedBulkKey };
+      
+      const { data: existingKeys, error: fetchError } = await supabase
+        .from('answer_keys')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('module_name', syncModule)
+        .eq('year', syncYear.trim())
+        .eq('semester', syncSemester);
+
+      if (existingKeys && existingKeys.length > 0) {
+        const targetKey = existingKeys[0];
+        const updatedSets = [...(targetKey.sets || []), newSet];
+        
+        const { error: updateError } = await supabase
+          .from('answer_keys')
+          .update({ sets: updatedSets, updated_at: new Date().toISOString() })
+          .eq('id', targetKey.id);
+          
+        if (updateError) throw updateError;
+        alert(`✅ Set added to existing Cloud Key! You can view it in the Answer Sheet or Grader modules.`);
       } else {
-        savedKeysArchive = [{
-          id: Date.now(), title: `Module ${syncModule || '1'}`, year: syncYear.trim() || '2026', semester: syncSemester,
-          moduleName: syncModule, numQuestions: Object.keys(extractedKey).length, numChoices: 4, internalCols: 2, ticketsPerRow: 2, rowsPerPage: 5, fillMode: 'cycle',
-          sets: [newSet], updatedAt: new Date().toISOString(),
-        }, ...savedKeysArchive];
+        const newEntry = {
+          user_id: user.id,
+          title: `Module ${syncModule || '1'}`,
+          year: syncYear.trim() || new Date().getFullYear().toString(),
+          semester: syncSemester,
+          module_name: syncModule,
+          num_questions: Object.keys(extractedKey).length,
+          num_choices: 4,
+          internal_cols: 2,
+          tickets_per_row: 2,
+          rows_per_page: 5,
+          fill_mode: 'cycle',
+          sets: [newSet],
+          updated_at: new Date().toISOString(),
+        };
+        
+        const { error: insertError } = await supabase.from('answer_keys').insert([newEntry]);
+        if (insertError) throw insertError;
+        alert(`✅ New Answer Key saved to Cloud! You can view it in the Answer Sheet or Grader modules.`);
       }
-      localStorage.setItem('answer_sheet_saved_keys_v1', JSON.stringify(savedKeysArchive));
-      alert(`✅ Answer Key saved!`);
-    } catch (err) { alert("Failed to save answer key to memory."); }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save answer key to Cloud.");
+    }
   };
 
   const copyToClipboard = () => {
@@ -678,9 +691,7 @@ function TestGenerator({ t }) {
       if (!window.mammoth) return alert("Word document parser is loading...");
       const reader = new FileReader();
       reader.onload = (e) => {
-        if (e.target?.result) {
-          window.mammoth.extractRawText({ arrayBuffer: e.target.result }).then((result) => processTextContent(result.value, file.name, id));
-        }
+        if (e.target?.result) window.mammoth.extractRawText({ arrayBuffer: e.target.result }).then((result) => processTextContent(result.value, file.name, id));
       };
       reader.readAsArrayBuffer(file);
     } else {
@@ -706,8 +717,107 @@ function TestGenerator({ t }) {
 
   return (
     <div className="space-y-8 print:hidden">
-      <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold text-gray-900">{t('gen_title')}</h1>
+      
+      {/* --- GEORGIAN USER GUIDE MODAL --- */}
+      {showGuide && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col my-auto">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-2xl sticky top-0 z-10">
+              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-3">
+                <BookOpen className="w-6 h-6 text-indigo-600" /> 
+                ტესტის გენერატორის წესები და სახელმძღვანელო
+              </h2>
+              <button onClick={() => setShowGuide(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors"><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+            
+            <div className="p-8 overflow-y-auto space-y-8 text-gray-700 text-sm leading-relaxed">
+              
+              {/* Section 1: Formatting */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-gray-900 border-b pb-2">1. კითხვების ფორმატირების წესები</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h4 className="font-bold text-indigo-700 mb-2">სტანდარტული ფორმატი (წერითი გამოცდებისთვის)</h4>
+                    <p className="mb-2">გამოიყენეთ სტანდარტული ნუმერაცია და ასოები. სწორი პასუხი მონიშნეთ ვარსკვლავით <code className="bg-white px-1 py-0.5 rounded font-bold">*</code>.</p>
+                    <pre className="text-xs bg-white p-3 rounded border border-gray-200 font-mono text-gray-600 whitespace-pre-wrap">
+                      {`1. What is the capital of France?\nA. London\nB. Paris *\nC. Berlin`}
+                    </pre>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h4 className="font-bold text-indigo-700 mb-2">Slash ფორმატი (კომპიუტერული გამოცდებისთვის)</h4>
+                    <p className="mb-2">გამოიყენეთ <code className="bg-white px-1 py-0.5 rounded font-bold">////</code> კითხვისთვის, <code className="bg-white px-1 py-0.5 rounded font-bold">///</code> არასწორი პასუხებისთვის და <code className="bg-white px-1 py-0.5 rounded font-bold">//</code> სწორი პასუხისთვის.</p>
+                    <pre className="text-xs bg-white p-3 rounded border border-gray-200 font-mono text-gray-600 whitespace-pre-wrap">
+                      {`//// What is the capital of France?\n/// London\n// Paris\n/// Berlin`}
+                    </pre>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Pro Mode & Tagging */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-gray-900 border-b pb-2 flex items-center gap-2">
+                  <span className="bg-indigo-600 text-white px-2 py-0.5 rounded text-xs">PRO</span> 2. ტეგები და Pro რეჟიმი
+                </h3>
+                <p>კითხვების კატეგორიზაციისთვის დაამატეთ ტეგები კვადრატულ ფრჩხილებში <code className="bg-gray-100 px-1 py-0.5 rounded font-bold">[ტეგი]</code> კითხვის დასაწყისში. <strong>ტეგები ავტომატურად დაიმალება (უხილავი გახდება) გენერირებულ ტესტში.</strong></p>
+                
+                <div className="bg-indigo-50/50 p-4 rounded-lg border border-indigo-100 space-y-3">
+                  <h4 className="font-bold text-indigo-800">როგორ დავწეროთ ტეგი:</h4>
+                  <pre className="text-xs bg-white p-3 rounded border border-gray-200 font-mono text-gray-600 whitespace-pre-wrap">
+                    {`[Cardiology] [Hard] 1. What is the primary function...\n//// [Epidemiology] [Easy] By strict definition...`}
+                  </pre>
+                  
+                  <h4 className="font-bold text-indigo-800 mt-4">Pro რეჟიმის გამოყენება:</h4>
+                  <p>როდესაც ჩართავთ <strong>Pro რეჟიმს</strong>, შეგიძლიათ შექმნათ კითხვების ფილტრაციის კონკრეტული წესები. Pro რეჟიმი იყენებს <strong>"და" (AND) ლოგიკას</strong>.</p>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li>მაგალითი: <code className="bg-white px-1 py-0.5 rounded font-bold">Cardiology</code> + <code className="bg-white px-1 py-0.5 rounded font-bold">Hard</code> ➔ აირჩიე <code className="bg-white px-1 py-0.5 rounded font-bold">5</code></li>
+                    <li><em>გენერატორი მოძებნის კითხვებს, რომლებიც შეიცავს ორივე ტეგს. თუ საკმარისი რაოდენობა ვერ მოიძებნა, გამოჩნდება ყვითელი გამაფრთხილებელი შეტყობინება.</em></li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Section 3: Toggles & Exporting */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-gray-900 border-b pb-2">3. გადამრთველები და პასუხების კოდის ამოღება</h3>
+                <div className="space-y-3">
+                  <div className="flex gap-3">
+                    <Shuffle className="w-5 h-5 text-gray-400 shrink-0" />
+                    <div><strong className="text-gray-900">კითხვების არევა:</strong> ურევს კითხვების თანმიმდევრობას.</div>
+                  </div>
+                  <div className="flex gap-3">
+                    <List className="w-5 h-5 text-gray-400 shrink-0" />
+                    <div><strong className="text-gray-900">პასუხების არევა:</strong> ურევს სავარაუდო პასუხებს თითოეული კითხვის შიგნით.</div>
+                  </div>
+                  <div className="flex gap-3">
+                    <Hash className="w-5 h-5 text-gray-400 shrink-0" />
+                    <div><strong className="text-gray-900">ნუმერაციის ჩვენება:</strong> ავტომატურად უნომრავს კითხვებს საბოლოო ტესტში.</div>
+                  </div>
+                  <div className="flex gap-3 mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <Cloud className="w-6 h-6 text-amber-600 shrink-0" />
+                    <div>
+                      <strong className="text-amber-900 block mb-1">🔑 Extract Key & Hide *</strong>
+                      <p className="text-amber-800 text-xs mb-2">შლის ვარსკვლავებს (*) სტანდარტული კითხვებიდან და აგენერირებს პასუხების ფურცლის კოდს.</p>
+                      <ul className="list-disc list-inside text-xs text-amber-800 space-y-1 ml-1">
+                        <li><strong>სტანდარტული ფორმატი:</strong> ვარსკვლავები იმალება. გენერირდება პასუხების კოდი.</li>
+                        <li><strong>Slash ფორმატი:</strong> <code className="bg-white px-1 rounded">//</code> სიმბოლოები <strong>არ იმალება</strong>. ეს კითხვები გამოტოვებულია პასუხების კოდის გენერაციისას.</li>
+                        <li><strong>პასუხების სინქრონიზაცია:</strong> შეინახეთ პასუხები პირდაპირ თქვენს Cloud ბაზაში.</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="text-center space-y-2 relative flex flex-col items-center">
+        <div className="flex items-center justify-center gap-3">
+          <h1 className="text-3xl font-bold text-gray-900">{t('gen_title')}</h1>
+          <button onClick={() => setShowGuide(true)} className="text-indigo-500 hover:text-indigo-700 bg-indigo-50 p-1.5 rounded-full transition-colors flex-shrink-0" title="Open Rulebook">
+            <Info className="w-6 h-6" />
+          </button>
+        </div>
         <p className="text-gray-500">{t('gen_subtitle')}</p>
       </div>
 
@@ -860,7 +970,7 @@ function TestGenerator({ t }) {
           <div className="flex flex-col sm:flex-row sm:items-center gap-4 mt-2 pt-4 border-t border-indigo-200">
              <label className="flex items-center gap-2 text-sm font-bold text-indigo-800 cursor-pointer select-none">
                <input type="checkbox" checked={syncAnswerKey} onChange={(e) => setSyncAnswerKey(e.target.checked)} className="rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4" />
-               Sync Answer Key to Memory
+               Sync Answer Key to Cloud Memory
              </label>
              
              {syncAnswerKey && (
@@ -874,7 +984,7 @@ function TestGenerator({ t }) {
                  </select>
                  <input type="text" value={syncYear} onChange={e=>setSyncYear(e.target.value)} placeholder="Year" className="w-20 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none" title="Year" />
                  
-                 <button onClick={handleSaveToMemory} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ml-2">💾 Save Key</button>
+                 <button onClick={handleSaveToMemory} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm ml-2">☁️ Save Key</button>
                </div>
              )}
           </div>
@@ -1382,9 +1492,33 @@ function AnswerSheetConstructor({ t }) {
       <style>{`
         @media print {
           @page { size: A4; margin: 0mm; }
-          body { visibility: hidden; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          #answer-sheet-container { visibility: visible !important; position: fixed; left: 0; top: 0; width: 210mm; height: 297mm; margin: 0; padding: 5mm; background: white; z-index: 9999; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          #answer-sheet-container * { visibility: visible !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          body { visibility: hidden; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: white; }
+          #answer-sheet-container {
+            visibility: visible !important;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 210mm;
+            margin: 0;
+            padding: 0;
+            background: white;
+            z-index: 9999;
+          }
+          #answer-sheet-container * {
+            visibility: visible !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .print-page {
+            width: 210mm;
+            height: 297mm;
+            padding: 5mm;
+            box-sizing: border-box;
+            page-break-after: always;
+          }
+          .print-page:last-child {
+            page-break-after: auto;
+          }
           .print\\:hidden { display: none !important; }
         }
       `}</style>
@@ -1667,9 +1801,28 @@ function AnswerSheetConstructor({ t }) {
       </div>
 
       {/* SHEET PREVIEW / PRINT CONTAINER */}
-      <div className="flex justify-center bg-gray-200 p-8 overflow-auto print:bg-white print:p-0">
-        <div id="answer-sheet-container" ref={sheetRef} className="bg-white shadow-2xl mx-auto text-black" style={{ width: '210mm', height: '297mm', boxSizing: 'border-box', padding: '5mm', display: 'grid', gridTemplateColumns: `repeat(${layout.gridCols}, 1fr)`, gridTemplateRows: `repeat(${layout.gridRows}, 1fr)`, gap: '2mm' }}>
-          {Array.from({ length: layout.ticketsPerSheet }).map((_, i) => renderTicket(i))}
+      <div className="flex flex-col items-center bg-gray-200 p-8 overflow-auto print:bg-white print:p-0 gap-8 print:gap-0">
+        <div id="answer-sheet-container" ref={sheetRef} className="bg-transparent mx-auto text-black flex flex-col gap-8 print:block">
+          {Array.from({ 
+            length: fillMode === 'once' ? Math.max(1, Math.ceil(sets.length / layout.ticketsPerSheet)) : 1 
+          }).map((_, pageIndex) => (
+            <div 
+              key={pageIndex} 
+              className="print-page bg-white shadow-2xl mx-auto print:shadow-none" 
+              style={{ 
+                width: '210mm', 
+                height: '297mm', 
+                boxSizing: 'border-box', 
+                padding: '5mm', 
+                display: 'grid', 
+                gridTemplateColumns: `repeat(${layout.gridCols}, 1fr)`, 
+                gridTemplateRows: `repeat(${layout.gridRows}, 1fr)`, 
+                gap: '2mm' 
+              }}
+            >
+              {Array.from({ length: layout.ticketsPerSheet }).map((_, i) => renderTicket((pageIndex * layout.ticketsPerSheet) + i))}
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -1686,21 +1839,41 @@ function MCQGrader({ t }) {
   const [isNegativeMarking, setIsNegativeMarking] = useState(false);
   const [penalty, setPenalty] = useState(0.33);
 
-  // --- IMPORT FROM SAVED KEYS STATE ---
+  // --- IMPORT FROM CLOUD KEYS STATE ---
   const [savedKeys, setSavedKeys] = useState([]);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('answer_sheet_saved_keys_v1');
-      if (raw) setSavedKeys(JSON.parse(raw));
-    } catch (e) {
-      console.error("Failed to load saved keys", e);
-    }
+    // Check if user is already logged in
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        fetchCloudKeys(session.user.id);
+      }
+    });
+
+    // Listen for login/logout actions happening in Module 2
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+      if (session?.user) fetchCloudKeys(session.user.id);
+      else setSavedKeys([]);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
+  const fetchCloudKeys = async (userId) => {
+    const { data, error } = await supabase
+      .from('answer_keys')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+    if (data) setSavedKeys(data);
+  };
+
   const handleImportSavedKey = (savedKeyObj) => {
-    const maxQ = savedKeyObj.numQuestions || 30;
+    const maxQ = savedKeyObj.num_questions || savedKeyObj.numQuestions || 30;
     
     // Transform saved sets into the grader's required string format
     const lines = (savedKeyObj.sets || []).map(setObj => {
@@ -2216,14 +2389,12 @@ function MCQGrader({ t }) {
               <h2 className="font-semibold text-gray-700">{t('grad_step1')}</h2>
               
               {/* IMPORT BUTTON */}
-              {savedKeys.length > 0 && (
-                <button 
-                  onClick={() => setShowImportModal(true)}
-                  className="text-xs bg-indigo-100 text-indigo-700 px-2.5 py-1.5 rounded-md font-bold hover:bg-indigo-200 transition-colors flex items-center gap-1"
-                >
-                  📥 Import Saved Key
-                </button>
-              )}
+              <button 
+                onClick={() => setShowImportModal(true)}
+                className="text-xs bg-indigo-100 text-indigo-700 px-2.5 py-1.5 rounded-md font-bold hover:bg-indigo-200 transition-colors flex items-center gap-1 shadow-sm"
+              >
+                ☁️ Import Cloud Key
+              </button>
             </div>
             
             {/* IMPORT MODAL OVERLAY */}
@@ -2234,22 +2405,30 @@ function MCQGrader({ t }) {
                   <button onClick={() => setShowImportModal(false)} className="text-gray-500 hover:text-red-500 font-bold">✕</button>
                 </div>
                 <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-                  {savedKeys.map(item => (
-                    <div key={item.id} className="border border-gray-200 rounded p-2 flex justify-between items-center bg-gray-50 hover:bg-indigo-50 transition-colors">
-                      <div className="min-w-0 flex-1">
-                        <div className="font-bold text-xs text-gray-800 truncate">{item.title}</div>
-                        <div className="text-[10px] text-gray-500">
-                          {item.year} {item.semester} • Module {item.moduleName} • {item.sets?.length || 0} Sets
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => handleImportSavedKey(item)}
-                        className="ml-2 px-2.5 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded hover:bg-indigo-700 shrink-0"
-                      >
-                        Import
-                      </button>
+                  {!user ? (
+                    <div className="text-center p-4 text-xs font-bold text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
+                      ☁️ Please log in via the Answer Sheet Constructor to view and import your cloud keys.
                     </div>
-                  ))}
+                  ) : savedKeys.length === 0 ? (
+                    <div className="text-center p-4 text-xs font-bold text-gray-500">No cloud keys found.</div>
+                  ) : (
+                    savedKeys.map(item => (
+                      <div key={item.id} className="border border-gray-200 rounded p-2 flex justify-between items-center bg-gray-50 hover:bg-indigo-50 transition-colors shadow-sm">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-xs text-gray-800 truncate">{item.title}</div>
+                          <div className="text-[10px] text-gray-500">
+                            {item.year} {item.semester} • Module {item.module_name || item.moduleName} • {item.sets?.length || 0} Sets
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => handleImportSavedKey(item)}
+                          className="ml-2 px-2.5 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded hover:bg-indigo-700 shrink-0"
+                        >
+                          Import
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
