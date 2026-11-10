@@ -1827,7 +1827,7 @@ function AnswerSheetConstructor({ t }) {
   );
 }
 
-// --- SUB-COMPONENT 3: MCQ GRADER (UPDATED WITH EXAM VITALS / BALANCE BAR) ---
+// --- SUB-COMPONENT 3: MCQ GRADER (UPDATED WITH EXAM VITALS / BALANCE BAR & CUSTOM MAX GRADE) ---
 function MCQGrader({ t }) {
   const [keysInput, setKeysInput] = useState('');
   const [studentsInput, setStudentsInput] = useState('');
@@ -1836,6 +1836,10 @@ function MCQGrader({ t }) {
   
   const [isNegativeMarking, setIsNegativeMarking] = useState(false);
   const [penalty, setPenalty] = useState(0.33);
+
+  // --- CUSTOM MAX GRADE STATE ---
+  const [isCustomMax, setIsCustomMax] = useState(false);
+  const [maxGrade, setMaxGrade] = useState(100);
 
   // --- IMPORT FROM CLOUD KEYS STATE ---
   const [savedKeys, setSavedKeys] = useState([]);
@@ -1914,6 +1918,9 @@ function MCQGrader({ t }) {
   const gradingResults = useMemo(() => {
     if (Object.keys(parsedKeys).length === 0 || !studentsInput.trim()) return [];
 
+    const parsedMax = parseFloat(maxGrade);
+    const useScaledGrade = isCustomMax && !isNaN(parsedMax) && parsedMax > 0;
+
     return studentsInput.split('\n')
       .map(line => line.trim())
       .filter(line => line.length > 0)
@@ -1928,7 +1935,7 @@ function MCQGrader({ t }) {
         const key = parsedKeys[version];
         if (!key) return { id: index, name, version, originalLine: line, error: `Key '${version}' not found` };
 
-        let score = 0;
+        let rawScoreCalc = 0;
         const comparison = [];
         const wrongQuestionNumbers = [];
 
@@ -1942,13 +1949,13 @@ function MCQGrader({ t }) {
 
           if (isVoid) {
             isCorrect = true; 
-            score += 1;
+            rawScoreCalc += 1;
           } else if (keyChar === studentChar) {
             isCorrect = true;
-            score += 1;
+            rawScoreCalc += 1;
           } else {
             if (!isSkipped && isNegativeMarking) {
-              score -= parseFloat(penalty) || 0;
+              rawScoreCalc -= parseFloat(penalty) || 0;
             }
             wrongQuestionNumbers.push(i + 1);
           }
@@ -1956,12 +1963,30 @@ function MCQGrader({ t }) {
           comparison.push({ index: i + 1, keyChar, studentChar, isCorrect, isVoid, isSkipped });
         }
 
-        score = Number(score.toFixed(2));
-        const percentage = key.length > 0 ? Math.round(Math.max(0, (score / key.length) * 100)) : 0;
+        const rawScore = Number(rawScoreCalc.toFixed(2));
+        const maxScore = useScaledGrade ? parsedMax : key.length;
+        const score = useScaledGrade && key.length > 0
+          ? Number(((rawScoreCalc / key.length) * parsedMax).toFixed(2))
+          : rawScore;
+        const percentage = key.length > 0 ? Math.round(Math.max(0, (rawScoreCalc / key.length) * 100)) : 0;
         
-        return { id: index, name, version, originalLine: line, answers, score, percentage, comparison, wrongQuestionNumbers, totalQuestions: key.length, error: null };
+        return { 
+          id: index, 
+          name, 
+          version, 
+          originalLine: line, 
+          answers, 
+          score, 
+          rawScore,
+          maxScore,
+          percentage, 
+          comparison, 
+          wrongQuestionNumbers, 
+          totalQuestions: key.length, 
+          error: null 
+        };
       });
-  }, [parsedKeys, studentsInput, isNegativeMarking, penalty]);
+  }, [parsedKeys, studentsInput, isNegativeMarking, penalty, isCustomMax, maxGrade]);
 
   const statistics = useMemo(() => {
     const validResults = gradingResults.filter(r => !r.error);
@@ -2347,30 +2372,57 @@ function MCQGrader({ t }) {
       </div>
 
       <div className="flex justify-between items-center border-b border-gray-200 pb-4 flex-wrap gap-4">
-        {/* Negative Marking Control Panel */}
-        <div className="flex items-center gap-6 bg-white border border-gray-200 px-4 py-2 rounded-lg shadow-sm">
-          <label className="flex items-center gap-3 cursor-pointer select-none">
-            <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ${isNegativeMarking ? 'bg-indigo-600' : 'bg-gray-300'}`}>
-              <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${isNegativeMarking ? 'translate-x-4' : 'translate-x-0'}`} />
-            </div>
-            <input type="checkbox" checked={isNegativeMarking} onChange={() => setIsNegativeMarking(!isNegativeMarking)} className="hidden" />
-            <span className="text-sm font-semibold text-gray-700">{t('grad_neg_marking')}</span>
-          </label>
-          
-          {isNegativeMarking && (
-            <div className="flex items-center gap-2 border-l border-gray-200 pl-6">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('grad_penalty')}</label>
-              <input 
-                type="number" 
-                step="0.01" 
-                min="0" 
-                max="1" 
-                value={penalty} 
-                onChange={(e) => setPenalty(e.target.value)} 
-                className="w-20 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-indigo-700" 
-              />
-            </div>
-          )}
+        <div className="flex items-center gap-4 flex-wrap">
+          {/* Negative Marking Control Panel */}
+          <div className="flex items-center gap-6 bg-white border border-gray-200 px-4 py-2 rounded-lg shadow-sm">
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ${isNegativeMarking ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+                <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${isNegativeMarking ? 'translate-x-4' : 'translate-x-0'}`} />
+              </div>
+              <input type="checkbox" checked={isNegativeMarking} onChange={() => setIsNegativeMarking(!isNegativeMarking)} className="hidden" />
+              <span className="text-sm font-semibold text-gray-700">{t('grad_neg_marking')}</span>
+            </label>
+            
+            {isNegativeMarking && (
+              <div className="flex items-center gap-2 border-l border-gray-200 pl-6">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('grad_penalty')}</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  min="0" 
+                  max="1" 
+                  value={penalty} 
+                  onChange={(e) => setPenalty(e.target.value)} 
+                  className="w-20 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-indigo-700" 
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Custom Max Grade Control Panel */}
+          <div className="flex items-center gap-6 bg-white border border-gray-200 px-4 py-2 rounded-lg shadow-sm">
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <div className={`w-10 h-6 rounded-full p-1 transition-colors duration-200 ${isCustomMax ? 'bg-indigo-600' : 'bg-gray-300'}`}>
+                <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${isCustomMax ? 'translate-x-4' : 'translate-x-0'}`} />
+              </div>
+              <input type="checkbox" checked={isCustomMax} onChange={() => setIsCustomMax(!isCustomMax)} className="hidden" />
+              <span className="text-sm font-semibold text-gray-700">Custom Max Grade</span>
+            </label>
+            
+            {isCustomMax && (
+              <div className="flex items-center gap-2 border-l border-gray-200 pl-6">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Max Points</label>
+                <input 
+                  type="number" 
+                  step="1" 
+                  min="1" 
+                  value={maxGrade} 
+                  onChange={(e) => setMaxGrade(e.target.value)} 
+                  className="w-20 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold text-indigo-700" 
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         {gradingResults.length > 0 && (
@@ -2415,7 +2467,7 @@ function MCQGrader({ t }) {
                         <div className="min-w-0 flex-1">
                           <div className="font-bold text-xs text-gray-800 truncate">{item.title}</div>
                           <div className="text-[10px] text-gray-500">
-                            {item.year} {item.semester} • Module {item.module_name || item.moduleName} • {item.sets?.length || 0} Sets
+                            {item.year} {item.semester} Module {item.module_name || item.moduleName} ({item.sets?.length || 0} Sets)
                           </div>
                         </div>
                         <button 
@@ -2470,8 +2522,15 @@ function MCQGrader({ t }) {
                               <div className="text-xs text-gray-500 font-mono mt-1 tracking-wider opacity-70 truncate max-w-[200px]">{result.answers}</div>
                             </div>
                             <div className="text-right">
-                              {/* Display score allowing for 2 decimal places if negative marking is applied */}
-                              <div className="text-2xl font-bold text-indigo-600">{result.score}<span className="text-sm text-gray-400 font-normal">/{result.totalQuestions}</span></div>
+                              {/* Display scaled or raw score */}
+                              <div className="text-2xl font-bold text-indigo-600">
+                                {result.score}<span className="text-sm text-gray-400 font-normal">/{result.maxScore}</span>
+                              </div>
+                              {isCustomMax && (
+                                <div className="text-[11px] text-gray-400 font-mono">
+                                  Raw: {result.rawScore}/{result.totalQuestions}
+                                </div>
+                              )}
                               <div className={`text-xs font-semibold px-2 py-0.5 rounded-full inline-block mt-1 ${result.percentage >= 80 ? 'bg-green-100 text-green-700' : result.percentage >= 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{result.percentage}%</div>
                             </div>
                           </div>
